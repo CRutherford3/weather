@@ -14,6 +14,10 @@ const ALLOWED = new Set([
   "api.open-meteo.com",
   "air-quality-api.open-meteo.com",
   "geocoding-api.open-meteo.com",
+  "mapservices.weather.noaa.gov",
+  "services5.arcgis.com",
+  "api.wheretheiss.at",
+  "tiles.openfreemap.org",
 ]);
 
 export default async (req: Request) => {

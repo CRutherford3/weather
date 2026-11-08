@@ -112,7 +112,31 @@ export const feeds = {
   fires: () => getData('https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0/query?where=IncidentSize%3E%3D100&outFields=IncidentName,IncidentSize,PercentContained,FireDiscoveryDateTime,POOState&f=geojson', { cache: 900e3 }),
   iemTms: () => getData('https://mesonet.agron.iastate.edu/json/tms.json', { cache: 120e3 }),
   rainviewer: () => getData('https://api.rainviewer.com/public/weather-maps.json', { cache: 120e3 }),
+  // WPC coded surface fronts and pressure centers (plain text, parsed in map.js)
+  fronts: () => getData('https://www.wpc.ncep.noaa.gov/basicwx/coded_srp.txt', { type: 'text', proxyFirst: true, cache: 900e3 }),
+  // Active SPC mesoscale discussions with polygons
+  mcd: () => getData('https://mesonet.agron.iastate.edu/api/1/nws/spc_mcd.geojson', { cache: 300e3 }),
+  // US Drought Monitor, simplified shapes (about 250 KB)
+  drought: () => getData('https://services5.arcgis.com/0OTVzJS4K09zlixn/arcgis/rest/services/USDM_current/FeatureServer/0/query?where=1%3D1&outFields=dm&maxAllowableOffset=0.05&geometryPrecision=3&f=geojson', { cache: 3600e3 }),
+  // NHC GIS service: forecast cones and tracks
+  nhcMeta: () => getData(`${NHC_GIS}?f=json`, { cache: 3600e3 }),
+  nhcLayer: (id) => getData(`${NHC_GIS}/${id}/query?where=1%3D1&outFields=*&f=geojson`, { cache: 600e3 }),
+  iss: () => getData('https://api.wheretheiss.at/v1/satellites/25544', { noProxy: true }),
+  issPath: (ts) => getData(`https://api.wheretheiss.at/v1/satellites/25544/positions?timestamps=${ts.join(',')}`, { noProxy: true }),
 };
+const NHC_GIS = 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer';
+
+// Air quality across a grid of points
+export async function aqGrid(lats, lons) {
+  const j = await getData(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=us_aqi`);
+  return Array.isArray(j) ? j : [j];
+}
+// Current temperature for a list of saved places (one request)
+export async function placesNow(list) {
+  if (!list.length) return [];
+  const j = await getData(`${OM}?latitude=${list.map((p) => r4(p.lat)).join(',')}&longitude=${list.map((p) => r4(p.lon)).join(',')}&current=temperature_2m,weather_code,is_day&timezone=auto`);
+  return Array.isArray(j) ? j : [j];
+}
 
 const STATES = { Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA', Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', Florida: 'FL', Georgia: 'GA', Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA', Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD', Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO', Montana: 'MT', Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH', Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC', 'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT', Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY', 'District of Columbia': 'DC', 'Puerto Rico': 'PR' };
 const stateAbbr = (s) => STATES[s] || s;

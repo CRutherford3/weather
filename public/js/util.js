@@ -163,6 +163,22 @@ export function uvInfo(v) {
   return { label: 'Extreme', color: '#a855f7' };
 }
 
+// ---------- bottom / side sheet (Layers, Map style, Places...) ----------
+export function openSheet(title, html, onMount) {
+  const sh = $('#sheet');
+  $('#sheetTitle').textContent = title;
+  $('#sheetBody').innerHTML = html;
+  sh.hidden = false;
+  requestAnimationFrame(() => sh.classList.add('open'));
+  document.body.classList.add('sheet-open');
+  onMount?.($('#sheetBody'));
+}
+export function closeSheet() {
+  const sh = $('#sheet'); if (!sh || sh.hidden) return;
+  sh.classList.remove('open'); document.body.classList.remove('sheet-open');
+  setTimeout(() => { if (!sh.classList.contains('open')) sh.hidden = true; }, 250);
+}
+
 // ---------- toast ----------
 export function toast(msg, ms = 3500) {
   let el = $('#toast');

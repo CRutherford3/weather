@@ -1,6 +1,6 @@
 import { APP_NAME, DEFAULT_LOC, alertColor } from './config.js';
-import { store, units, $, $$, esc, debounce, toast, fmtT, fmtW, compass, icon, timeAgo } from './util.js';
-import { geocode, reverseGeocode, loadPoint, loadModels, loadDiscussion } from './api.js';
+import { store, units, $, $$, esc, debounce, toast, fmtT, fmtW, compass, icon, timeAgo, wx, tempColor, U, openSheet, closeSheet, dayName, hourLabel } from './util.js';
+import { geocode, reverseGeocode, loadPoint, loadModels, loadDiscussion, placesNow } from './api.js';
 import * as F from './forecast.js';
 import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
@@ -27,7 +27,7 @@ function applyTheme() {
   $('meta[name="theme-color"]').content = t === 'dark' ? '#0a0f1c' : '#f3f6fb';
   $('#themeBtn').innerHTML = THEME_ICONS[state.theme];
   $('#themeBtn').title = `Theme: ${state.theme} (click to change)`;
-  Map.setBase(t);
+  Map.setTheme(t);
   if (state.M) updateDashboard({});
 }
 mq.addEventListener('change', applyTheme);
@@ -35,14 +35,14 @@ $('#themeBtn').onclick = () => { state.theme = { auto: 'dark', dark: 'light', li
 
 // ---------- units ----------
 function applyUnits() { $('#unitBtn').textContent = units.system === 'imperial' ? '°F' : '°C'; }
-$('#unitBtn').onclick = () => { units.system = units.system === 'imperial' ? 'metric' : 'imperial'; store.set('units', units.system); applyUnits(); renderAll(); Map.applyLayers(); };
+$('#unitBtn').onclick = () => { units.system = units.system === 'imperial' ? 'metric' : 'imperial'; store.set('units', units.system); applyUnits(); renderAll(); Map.refreshUnits(); };
 
 // ---------- routing ----------
 const VIEWS = ['radar', 'forecast', 'dashboard'];
 function route() {
   const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'radar';
   $('#modal').hidden = true;
-  Map.getMap()?.closePopup();
+  Map.closePopups(); closeSheet();
   VIEWS.forEach((x) => { $(`#view-${x}`).hidden = x !== v; });
   $$('[data-view]').forEach((a) => a.classList.toggle('active', a.dataset.view === v));
   document.body.dataset.view = v;
@@ -62,8 +62,8 @@ function setLocation(loc, { fly = true } = {}) {
   state.models = null; state.afd = undefined;
   refresh();
 }
-async function pickPoint({ lat, lon }) {
-  const name = await reverseGeocode(lat, lon);
+async function pickPoint({ lat, lon }, known) {
+  const name = known || await reverseGeocode(lat, lon);
   setLocation({ lat, lon, name }, { fly: false });
   location.hash = '#forecast';
 }
@@ -77,14 +77,46 @@ function geolocate(silent) {
 }
 $('#locBtn').onclick = () => geolocate(false);
 
-// favorites
-const isFav = () => state.favs.some((f) => f.name === state.loc?.name);
-function updateFavBtn() { $('#favBtn').textContent = isFav() ? '★' : '☆'; $('#favBtn').classList.toggle('on', isFav()); }
+// ---------- saved places ----------
+const near = (a, b) => Math.abs(a.lat - b.lat) < 0.02 && Math.abs(a.lon - b.lon) < 0.02;
+const isFav = () => state.loc && state.favs.some((f) => near(f, state.loc));
+function saveFavs() { store.set('favs', state.favs); updateFavBtn(); Map.drawPlaces(); }
+function updateFavBtn() { $('#favBtn').textContent = isFav() ? '★' : '☆'; $('#favBtn').classList.toggle('on', !!isFav()); }
 $('#favBtn').onclick = () => {
-  if (isFav()) state.favs = state.favs.filter((f) => f.name !== state.loc.name);
+  if (isFav()) state.favs = state.favs.filter((f) => !near(f, state.loc));
   else state.favs = [...state.favs, { lat: state.loc.lat, lon: state.loc.lon, name: state.loc.name }];
-  store.set('favs', state.favs); updateFavBtn(); toast(isFav() ? `Saved ${state.loc.name}` : 'Removed from saved places');
+  saveFavs(); toast(isFav() ? `Saved ${state.loc.name}` : 'Removed from My Places');
 };
+async function savePlace({ lat, lon }) {
+  const name = await reverseGeocode(lat, lon);
+  if (!state.favs.some((f) => near(f, { lat, lon }))) state.favs = [...state.favs, { lat, lon, name }];
+  saveFavs(); toast(`Saved ${name} to My Places`);
+}
+async function openPlaces() {
+  const list = state.favs;
+  const rows = list.map((p, i) => `<div class="place-row" data-i="${i}"><button class="place-main" data-go="${i}"><span class="place-star">★</span><span class="place-name">${esc(p.name)}</span><span class="place-temp" id="pt${i}">--</span></button><button class="place-del" data-del="${i}" aria-label="Remove ${esc(p.name)}">✕</button></div>`).join('');
+  openSheet('My Places', `${list.length ? `<div class="place-list">${rows}</div>` : '<p class="empty">No saved places yet.</p>'}
+    <button class="btn wide" id="addHere">+ Save ${esc(state.loc?.name || 'this location')}</button>
+    <p class="muted small sheet-foot">Tip: tap anywhere on the map and choose <b>Save place</b>. Saved places show as stars on the map.</p>`, async (b) => {
+    $$('[data-go]', b).forEach((x) => x.onclick = () => { const p = state.favs[+x.dataset.go]; closeSheet(); setLocation({ ...p }); });
+    $$('[data-del]', b).forEach((x) => x.onclick = () => { state.favs = state.favs.filter((_, i) => i !== +x.dataset.del); saveFavs(); openPlaces(); });
+    $('#addHere', b).onclick = () => { if (!isFav()) { state.favs = [...state.favs, { lat: state.loc.lat, lon: state.loc.lon, name: state.loc.name }]; saveFavs(); } openPlaces(); };
+    try { (await placesNow(list)).forEach((r, i) => { const el = $(`#pt${i}`, b); if (el && r.current) el.innerHTML = `${icon(wx(r.current.weather_code, r.current.is_day).icon, 26)} ${fmtT(r.current.temperature_2m)}`; }); } catch { /* temps optional */ }
+  });
+}
+
+// follow my location (lock)
+let watchId = null;
+function updateLock() { $('#wxLock')?.classList.toggle('on', watchId != null); }
+function toggleFollow() {
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; updateLock(); toast('Stopped following your location'); return; }
+  if (!navigator.geolocation) return toast('Location is not available in this browser');
+  watchId = navigator.geolocation.watchPosition(async (p) => {
+    const { latitude: lat, longitude: lon } = p.coords;
+    if (!state.loc?.gps || !near(state.loc, { lat, lon })) setLocation({ lat, lon, name: await reverseGeocode(lat, lon), gps: true });
+  }, () => { toast('Could not get your location. Check location permissions.'); watchId = null; updateLock(); }, { maximumAge: 60000, timeout: 15000 });
+  updateLock(); toast('Following your location');
+}
 
 // search
 const results = $('#results');
@@ -134,12 +166,8 @@ async function loadExtras() {
 function renderAll() {
   const M = state.M; if (!M) return;
   const loc = state.loc;
-  // radar side panel
-  const c = M.current, t = M.days[0];
-  $('#rpNow').innerHTML = `<a class="rp-card" href="#forecast">${icon(c.icon, 56)}<div class="rp-main"><div class="rp-temp">${fmtT(c.temp)}</div><div class="rp-cond">${esc(c.text)}</div></div>
-    <div class="rp-side"><div>H ${fmtT(t.hi)} · L ${fmtT(t.lo)}</div><div>Feels ${fmtT(c.feels)}</div><div>${compass(c.dir)} ${fmtW(c.wind)}</div></div></a>
-    <div class="rp-next">${nextHoursText(M)}</div>`;
-  $('#rpAlerts').innerHTML = M.alerts.length ? F.alertsHTML(M, true) : '';
+  const c = M.current;
+  $('#wxCard').innerHTML = wxCardHTML(M, loc); wireCard();
   // forecast page
   $('#fcHero').innerHTML = F.heroHTML(M, loc);
   $('#fcAlerts').innerHTML = F.alertsHTML(M);
@@ -162,14 +190,42 @@ function renderAll() {
   document.title = `${fmtT(c.temp)} ${loc.name} · ${APP_NAME}`;
   updateDashboard({ M, loc });
 }
-function nextHoursText(M) {
-  const h = M.hours.slice(0, 12); const wet = h.find((x) => x.pop >= 40);
-  if (!wet) return 'Low rain chances for the next 12 hours.';
-  const idx = h.indexOf(wet);
-  return idx === 0 ? `${esc(wet.text)} likely now (${wet.pop}%).` : `${esc(wet.text)} possible in about ${idx} hr (${wet.pop}%).`;
+// MyRadar-style header card: temperature ring, next high/low, rain chance, next two days
+function wxCardHTML(M, loc) {
+  const c = M.current, hs = M.hours.slice(0, 24);
+  let hiH = hs[0], loH = hs[0];
+  for (const h of hs) { if (h.temp > hiH.temp) hiH = h; if (h.temp < loH.temp) loH = h; }
+  const hi = Math.max(hiH.temp, c.temp), lo = Math.min(loH.temp, c.temp);
+  const f = Math.max(0, Math.min(1, (c.temp - lo) / Math.max(0.5, hi - lo)));
+  const R = 44, cx = 54, cy = 54, P = (a) => [cx + R * Math.cos(a * Math.PI / 180), cy + R * Math.sin(a * Math.PI / 180)].map((v) => v.toFixed(1));
+  const [sx, sy] = P(135), [ex, ey] = P(45), [dx, dy] = P(135 + 270 * f);
+  const ring = `<svg viewBox="0 0 108 108" class="ring"><defs><linearGradient id="rg" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="${tempColor(lo)}"/><stop offset="1" stop-color="${tempColor(hi)}"/></linearGradient></defs>
+    <path d="M${sx} ${sy} A${R} ${R} 0 1 1 ${ex} ${ey}" fill="none" stroke="url(#rg)" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="${dx}" cy="${dy}" r="7" fill="#fff" stroke="rgba(0,0,0,.35)" stroke-width="1.5"/>
+    <g class="ring-tag"><circle cx="${sx}" cy="${sy}" r="8" fill="${tempColor(lo)}"/><text x="${sx}" y="${+sy + 3.5}">L</text><circle cx="${ex}" cy="${ey}" r="8" fill="${tempColor(hi)}"/><text x="${ex}" y="${+ey + 3.5}">H</text></g></svg>`;
+  const hiFirst = hiH.time <= loH.time;
+  const pill = (h, v) => `<div class="hl"><span style="background:${tempColor(v)}">${fmtT(v)}</span><small>${hourLabel(h.time)}</small></div>`;
+  const days = [1, 2].map((i) => { const d = M.days[i]; if (!d) return ''; return `<div class="wx-day"><b>${dayName(d.date).toUpperCase()}</b>${icon(d.icon, 40)}<span>${fmtT(d.hi)} <em>${fmtT(d.lo)}</em></span><i style="background:linear-gradient(90deg,${tempColor(d.lo)},${tempColor(d.hi)})"></i></div>`; }).join('');
+  const lockSvg = '<svg width="20" height="22" viewBox="0 0 20 22"><rect x="2" y="10" width="16" height="11" rx="2.5" fill="currentColor"/><path d="M5.5 10V6.5a4.5 4.5 0 0 1 9 0' + (watchId != null ? 'V10' : '') + '" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>';
+  return `<div class="wx-top"><button class="wx-ic${watchId != null ? ' on' : ''}" id="wxLock" title="Follow my location">${lockSvg}</button>
+      <button class="wx-loc" id="wxLoc" title="Search places"><span>${esc(loc.name)}</span><span class="wx-mini">${fmtT(c.temp)} ${icon(c.icon, 22)}</span></button>
+      <button class="wx-ic" id="wxPin" title="My places"><svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 25S2 15 2 9.5a9 9 0 0 1 18 0C20 15 11 25 11 25z" fill="currentColor"/><path d="M11 4.8l1.5 3.1 3.4.5-2.5 2.4.6 3.4-3-1.6-3 1.6.6-3.4-2.5-2.4 3.4-.5z" fill="var(--card)"/></svg></button></div>
+    <div class="wx-body">
+      <a class="wx-ring" href="#forecast" title="Full forecast">${ring}<div class="wx-now"><b>${fmtT(c.temp)}</b><span>now</span></div></a>
+      <div class="wx-hls">${hiFirst ? pill(hiH, hi) + pill(loH, lo) : pill(loH, lo) + pill(hiH, hi)}</div>
+      <a class="wx-cond" href="#forecast" title="${esc(c.text)}">${icon(c.icon, 62)}<span>${M.days[0].pop ?? 0}% <svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z" fill="#38bdf8"/></svg></span></a>
+      <div class="wx-days">${days}</div>
+    </div>
+    <button class="wx-grab" id="wxGrab" aria-label="Show or hide details"><span></span></button>`;
+}
+function wireCard() {
+  $('#wxLock').onclick = toggleFollow;
+  $('#wxPin').onclick = openPlaces;
+  $('#wxLoc').onclick = () => { $('#q').focus(); };
+  $('#wxGrab').onclick = () => { $('#wxCard').classList.toggle('collapsed'); store.set('cardCollapsed', $('#wxCard').classList.contains('collapsed')); };
 }
 function wireAlertButtons(root) {
-  $$('#rpAlerts [data-alert], #fcAlerts [data-alert]', root).forEach((b) => b.onclick = () => showAlert(state.M.alerts[+b.dataset.alert]));
+  $$('#fcAlerts [data-alert]', root).forEach((b) => b.onclick = () => showAlert(state.M.alerts[+b.dataset.alert]));
 }
 
 // ---------- alert detail, modal, lightbox ----------
@@ -196,30 +252,79 @@ $('#lightbox').onclick = () => { $('#lightbox').hidden = true; };
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); $('#lightbox').hidden = true; } });
 window.addEventListener('storms', (e) => updateDashboard({ storms: e.detail }));
 
-// ---------- radar panel controls ----------
-function buildPanel() {
-  $('#layerList').innerHTML = Map.LAYER_INFO.map((l) => `<label class="layer"><input type="checkbox" data-layer="${l.id}" ${Map.S.layers[l.id] ? 'checked' : ''}><span class="sw"></span><div><b>${l.name}</b><small>${l.desc}</small></div></label>`).join('');
-  $$('[data-layer]').forEach((cb) => cb.onchange = () => { Map.S.layers[cb.dataset.layer] = cb.checked; Map.applyLayers(); });
-  const seg = (sel, cur, fn) => { $$(`${sel} button`).forEach((b) => { b.classList.toggle('on', b.dataset.v === cur); b.onclick = () => { $$(`${sel} button`).forEach((x) => x.classList.toggle('on', x === b)); fn(b.dataset.v); }; }); };
-  seg('#baseSeg', Map.S.base, (v) => Map.setBaseMode(v, effTheme()));
-  seg('#srcSeg', Map.S.radarSrc, Map.setRadarSrc);
-  seg('#satSeg', Map.S.sat, (v) => { Map.setSat(v); if (!Map.S.layers.sat) { Map.S.layers.sat = true; $('[data-layer="sat"]').checked = true; Map.applyLayers(); } });
-  $('#opacity').value = Map.S.opacity; $('#opacity').oninput = (e) => Map.setOpacity(+e.target.value);
-  $('#speed').value = 1150 - Map.S.speed; $('#speed').oninput = (e) => Map.setSpeed(1150 - +e.target.value);
-  const toggle = () => { document.body.classList.toggle('panel-open'); setTimeout(Map.invalidate, 260); };
-  $('#panelToggle').onclick = toggle; $('#panelHandle').onclick = toggle;
-  if (innerWidth >= 1000 && store.get('panelOpen', true)) document.body.classList.add('panel-open');
-  $('#panelToggle').addEventListener('click', () => store.set('panelOpen', document.body.classList.contains('panel-open')));
+
+// ---------- settings sheet (MyRadar-style) ----------
+const VERSION = '2.0.0';
+const ATTRIB = [
+  ['National Weather Service (NOAA)', 'Forecasts, observations, alerts, radar loops', 'https://www.weather.gov/'],
+  ['NOAA NEXRAD via Iowa Environmental Mesonet', 'Radar mosaic, rain totals, GOES and lightning tiles', 'https://mesonet.agron.iastate.edu/'],
+  ['NOAA NHC, SPC, WPC, CPC', 'Hurricanes, severe outlooks, fronts, rain and long-range outlooks', 'https://www.noaa.gov/'],
+  ['NOAA NESDIS / GOES-East', 'Satellite imagery', 'https://www.star.nesdis.noaa.gov/GOES/'],
+  ['NASA GIBS', 'True color satellite tiles', 'https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api'],
+  ['Open-Meteo (CC BY 4.0)', 'Model forecasts, air quality, geocoding', 'https://open-meteo.com/'],
+  ['RainViewer', 'Worldwide radar', 'https://www.rainviewer.com/'],
+  ['U.S. Geological Survey', 'Earthquakes', 'https://earthquake.usgs.gov/'],
+  ['National Interagency Fire Center', 'Wildfires', 'https://www.nifc.gov/'],
+  ['U.S. Drought Monitor (UNL, USDA, NOAA)', 'Drought areas', 'https://droughtmonitor.unl.edu/'],
+  ['Where The ISS At?', 'Space station position', 'https://wheretheiss.at/'],
+  ['OpenFreeMap / OpenMapTiles / OpenStreetMap contributors', 'Map styles and map data', 'https://openfreemap.org/'],
+  ['Esri', 'Satellite basemap imagery', 'https://www.esri.com/'],
+  ['BigDataCloud', 'Place names for your location', 'https://www.bigdatacloud.com/'],
+  ['MapLibre GL JS (BSD-3)', 'Map engine', 'https://maplibre.org/'],
+  ['Leaflet (BSD-2), SortableJS (MIT)', 'Dashboard mini map and drag to reorder', 'https://leafletjs.com/'],
+];
+function openSettings(view = 'main') {
+  if (view === 'attrib') {
+    openSheet('Licenses & Attributions', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="sheet-sub">Data and software</div>${ATTRIB.map(([n, d, u]) => `<a class="set-row" href="${u}" target="_blank" rel="noopener"><span><b>${esc(n)}</b><small>${esc(d)}</small></span><i class="chev">›</i></a>`).join('')}`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
+    return;
+  }
+  if (view === 'privacy') {
+    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. There are no accounts, ads or tracking.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
+    return;
+  }
+  const imp = units.system === 'imperial';
+  openSheet('Settings', `<div class="set-pad"><div class="seg big" id="setUnits"><button data-v="metric" class="${imp ? '' : 'on'}">Celsius</button><button data-v="imperial" class="${imp ? 'on' : ''}">Fahrenheit</button></div></div>
+    <div class="sheet-sub">Appearance</div>
+    <div class="set-pad"><div class="seg big" id="setTheme">${['auto', 'dark', 'light'].map((t) => `<button data-v="${t}" class="${state.theme === t ? 'on' : ''}">${t === 'auto' ? 'Auto' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
+    <div class="sheet-sub">Location</div>
+    <div class="lrow"><div class="lrow-main"><span>Follow My Location</span></div><label class="tg"><input type="checkbox" id="setFollow" ${watchId != null ? 'checked' : ''}><span></span></label></div>
+    <p class="set-note">Keep the forecast and map centered on you as you move.</p>
+    <button class="set-row" id="setPlaces"><span><b>My Places</b><small>${state.favs.length} saved</small></span><i class="chev">›</i></button>
+    <div class="sheet-sub">Alerts</div>
+    <div class="set-row static"><span><b>Severe weather notifications</b><small>Push alerts for your saved places arrive with the iPhone app. Until then, warnings show in the red banner and on the map.</small></span></div>
+    <div class="sheet-sub">About</div>
+    <button class="set-row" id="setAttrib"><span><b>Licenses & Attributions</b></span><i class="chev">›</i></button>
+    <button class="set-row" id="setPrivacy"><span><b>Privacy</b></span><i class="chev">›</i></button>
+    <button class="set-row" id="setReset"><span><b>Reset map layers</b><small>Back to the default layers and style</small></span><i class="chev">›</i></button>
+    <p class="set-ver">${esc(APP_NAME)} ${VERSION}</p>`, (b) => {
+    $$('#setUnits button', b).forEach((x) => x.onclick = () => { if (units.system !== x.dataset.v) $('#unitBtn').click(); openSettings(); });
+    $$('#setTheme button', b).forEach((x) => x.onclick = () => { state.theme = x.dataset.v; store.set('theme', state.theme); applyTheme(); openSettings(); });
+    $('#setFollow', b).onchange = () => toggleFollow();
+    $('#setPlaces', b).onclick = openPlaces;
+    $('#setAttrib', b).onclick = () => openSettings('attrib');
+    $('#setPrivacy', b).onclick = () => openSettings('privacy');
+    $('#setReset', b).onclick = () => { store.set('layers2', null); store.set('mapStyle', 'auto'); location.reload(); };
+  });
+}
+
+// ---------- radar toolbar ----------
+function wireTools() {
+  $('#toolLocate').onclick = () => geolocate(false);
+  $('#toolPlaces').onclick = openPlaces;
+  $('#toolSettings').onclick = () => openSettings();
+  $('#toolForecast').onclick = () => { location.hash = '#forecast'; };
+  $('#toolDash').onclick = () => { location.hash = '#dashboard'; };
+  if (store.get('cardCollapsed', false)) $('#wxCard').classList.add('collapsed');
 }
 
 // ---------- boot ----------
 async function boot() {
-  $('#appName').textContent = APP_NAME;
+  // wordmark is styled in index.html; APP_NAME drives titles
   applyUnits();
   const start = state.loc || DEFAULT_LOC;
-  Map.initMap('map', start, effTheme, pickPoint);
+  Map.initMap('map', start, effTheme, { onPick: pickPoint, onSavePlace: savePlace, getPlaces: () => state.favs });
   applyTheme();
-  buildPanel();
+  wireTools();
   initDashboard();
   route();
   if (state.loc) { $('#locName').textContent = state.loc.name; updateFavBtn(); refresh(); }

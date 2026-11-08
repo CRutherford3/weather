@@ -14,7 +14,8 @@
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icons/icon-180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="/css/app.css">
   <script>
@@ -24,9 +25,9 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#radar" aria-label="Home">
-      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#0ea5e9"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lg)"/><path d="M20 44c0-8 6-10 6-18M32 48c0-10 7-13 7-24M44 44c0-7 5-9 5-15" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"/><path d="M33 14l6 8h-12z" fill="#fff"/></svg>
-      <span id="appName">Updraft</span>
+    <a class="brand" href="#radar" aria-label="Updraft home">
+      <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a1f5c"/><stop offset="1" stop-color="#0a0d18"/></linearGradient><linearGradient id="ldbz" x1="0" y1="58" x2="0" y2="8" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#22c55e"/><stop offset=".45" stop-color="#facc15"/><stop offset=".75" stop-color="#f97316"/><stop offset="1" stop-color="#ef4444"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#lbg)"/><g fill="none" stroke="url(#ldbz)" stroke-linecap="round"><path d="M17 54c-4-8 2-14 6-20s5-12 2-18" stroke-width="5.5"/><path d="M31 56c-3-9 3-16 7-23s3-12 0-17" stroke-width="6.5"/><path d="M45 52c-3-7 2-12 5-17s3-9 1-13" stroke-width="5"/></g><path d="M38 6l8 11h-6.5l-1.5-1.8-1.5 1.8H30z" fill="#fff"/></svg>
+      <span id="appName" class="wordmark"><b>up</b>draft</span>
     </a>
     <nav class="tabs" aria-label="Sections">
       <a href="#radar" data-view="radar">Radar</a>
@@ -53,32 +54,31 @@
     <!-- RADAR -->
     <section id="view-radar" class="view">
       <div id="map"></div>
-      <aside id="radarPanel" class="panel">
-        <div class="panel-handle" id="panelHandle"><span></span></div>
-        <div id="rpNow" class="rp-now"><div class="empty">Loading…</div></div>
-        <div id="rpAlerts" class="alert-list"></div>
-        <h4 class="panel-h">Map layers</h4>
-        <div id="layerList" class="layer-list"></div>
-        <h4 class="panel-h">Map style</h4>
-        <div class="seg" id="baseSeg">
-          <button data-v="auto">Auto</button><button data-v="dark">Dark</button><button data-v="light">Light</button><button data-v="roads">Roads</button><button data-v="satellite">Satellite</button>
+      <div class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+      <div id="wxCard" class="wx-card"><div class="empty">Loading…</div></div>
+
+      <div class="dock">
+        <div class="dock-main">
+          <div id="legendBar" class="legend-bar" title="Radar intensity: light to severe"></div>
+          <div class="dock-row">
+            <button id="srcBtn" class="src-btn" aria-label="Choose radar"><span class="src-thumb"></span><span id="srcName">Hi-Def Radar</span><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg></button>
+            <div class="time-pill"><b id="tlTime">--</b><small id="tlAgo"></small></div>
+            <button id="tlPlay" class="play-btn" aria-label="Play or pause"></button>
+          </div>
+          <input id="tlRange" type="range" min="0" max="10" value="10" aria-label="Radar time">
         </div>
-        <h4 class="panel-h">Radar</h4>
-        <div class="seg" id="srcSeg"><button data-v="us">US NEXRAD (sharper)</button><button data-v="global">Worldwide</button></div>
-        <label class="slider">Opacity <input type="range" id="opacity" min="0.2" max="1" step="0.05"></label>
-        <label class="slider">Loop speed <input type="range" id="speed" min="150" max="1000" step="50"></label>
-        <h4 class="panel-h">Satellite type</h4>
-        <div class="seg" id="satSeg"><button data-v="geocolor">True color (delayed)</button><button data-v="ir">Infrared</button><button data-v="vis">Visible</button><button data-v="wv">Water vapor</button></div>
-        <p class="muted small">Tap anywhere on the map for that spot's forecast. Tap a warning polygon for details.</p>
-      </aside>
-      <button id="panelToggle" class="fab" title="Layers & settings"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
-      <div id="timeline" class="timeline">
-        <button id="tlPrev" class="tl-btn" title="Previous frame">‹</button>
-        <button id="tlPlay" class="tl-btn play" title="Play / pause"></button>
-        <button id="tlNext" class="tl-btn" title="Next frame">›</button>
-        <input id="tlRange" type="range" min="0" max="10" value="10" aria-label="Radar time">
-        <div class="tl-time"><b id="tlTime">--</b><small id="tlAgo"></small></div>
-        <div id="tlLegend" class="tl-legend"></div>
+        <div class="toolbar">
+          <button id="toolLocate" title="My location"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Locate</span></button>
+          <button id="toolStyle" title="Map style"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Map</span></button>
+          <button id="toolLayers" title="Layers"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Layers</span></button>
+          <button id="toolPlaces" title="My places"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 22s-7-7.5-7-12a7 7 0 0 1 14 0c0 4.5-7 12-7 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 6.5l1.2 2.5 2.7.4-2 1.9.5 2.7-2.4-1.3-2.4 1.3.5-2.7-2-1.9 2.7-.4z" fill="currentColor"/></svg><span>Places</span></button>
+          <button id="toolGlobe" class="d-only" title="Globe view"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Globe</span></button>
+          <button id="toolInfo" class="d-only" title="Forecast at crosshair"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Here</span></button>
+          <button id="toolForecast" class="m-only" title="Forecast"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 2A3 3 0 0 0 7 18z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Forecast</span></button>
+          <button id="toolDash" class="m-only" title="Dashboard"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="3" width="8" height="5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="10" width="8" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="13" width="8" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Dashboard</span></button>
+          <button id="toolSettings" title="Settings"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.8l1.6 2.4 2.8-.7.7 2.8 2.4 1.6-1.2 2.6 1.2 2.6-2.4 1.6-.7 2.8-2.8-.7L12 21.2l-1.6-2.4-2.8.7-.7-2.8-2.4-1.6 1.2-2.6-1.2-2.6 2.4-1.6.7-2.8 2.8.7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>Settings</span></button>
+        </div>
       </div>
     </section>
 
@@ -126,9 +126,11 @@
     <a href="#dashboard" data-view="dashboard"><svg width="22" height="22" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="3" width="8" height="5" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="10" width="8" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="13" width="8" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>Dashboard</a>
   </nav>
 
+  <div id="sheet" class="sheet" hidden><div class="sheet-box" role="dialog" aria-modal="true"><div class="sheet-grab"></div><header class="sheet-head"><h3 id="sheetTitle"></h3><button class="sheet-x" id="sheetClose" aria-label="Close">✕</button></header><div id="sheetBody" class="sheet-body"></div></div></div>
   <div id="modal" class="modal" hidden><div class="modal-box" role="dialog" aria-modal="true"><header><h3 id="modalTitle"></h3><button class="icon-btn" id="modalClose" aria-label="Close">✕</button></header><div id="modalBody" class="modal-body"></div></div></div>
   <div id="lightbox" class="lightbox" hidden><img alt=""><button class="icon-btn" aria-label="Close">✕</button></div>
 
+  <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
   <script type="module" src="/js/app.js"></script>
