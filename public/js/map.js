@@ -88,7 +88,20 @@ function onStyleLoad() {
   // Style switch wipes custom layers; markers survive, so remove everything and re-add
   for (const id of Object.keys(active)) { try { active[id]?.remove?.(); } catch { /* gone */ } delete active[id]; }
   addFrontImages();
+  if ((S.style === 'auto' ? themeFn() : S.style) === 'dark') brightenDark();
   applyLayers();
+}
+// OpenFreeMap's dark style is very dim; lift borders, water and labels so it reads like a radar app
+function brightenDark() {
+  const set = (id, prop, val) => { try { map.setPaintProperty(id, prop, val); } catch { /* prop not on layer */ } };
+  for (const l of map.getStyle().layers) {
+    const id = l.id;
+    if (l.type === 'background') set(id, 'background-color', '#0d1016');
+    else if (/^water/.test(id) && l.type === 'fill') set(id, 'fill-color', '#1a2233');
+    else if (/boundary/.test(id) && l.type === 'line') { set(id, 'line-color', /2|country/.test(id) ? '#c3cad6' : '#8e97a6'); set(id, 'line-opacity', 0.85); }
+    else if (/road|highway|transportation/.test(id) && l.type === 'line') set(id, 'line-opacity', 0.45);
+    else if (l.type === 'symbol' && l.layout?.['text-field']) { set(id, 'text-color', /place_(city|capital|state|country)|state|country/.test(id) ? '#e7ecf5' : '#aab3c2'); set(id, 'text-halo-color', 'rgba(0,0,0,.9)'); set(id, 'text-halo-width', 1.4); }
+  }
 }
 export function setTheme() { if (S.style === 'auto') setStyle('auto'); }
 export function setStyle(v) {
@@ -314,7 +327,7 @@ function parseFronts(txt) {
   const items = []; let cur = null, valid = '';
   for (const raw of txt.split('\n')) {
     const l = raw.trim(); if (!l) { cur = null; continue; }
-    const v = l.match(/VALID\s+(\d{12})Z/); if (v) valid = v[1];
+    const v = l.match(/VALID\s+(\d{12})Z/); if (v) { if (valid) break; valid = v[1]; } // first (nearest) forecast time only
     const m = l.match(/^(HIGHS|LOWS|COLD|WARM|STNRY|OCFNT|TROF)\b(.*)$/);
     if (m) { cur = { type: m[1], toks: m[2].trim().split(/\s+/).filter(Boolean) }; items.push(cur); }
     else if (cur && /^\d/.test(l)) cur.toks.push(...l.split(/\s+/));
