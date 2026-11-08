@@ -74,6 +74,7 @@ export function initMap(el, loc, getTheme, handlers) {
   map.on('touchstart', (e) => { if (e.originalEvent.touches.length !== 1) return; pressT = setTimeout(() => quickForecast(e.lngLat), 550); });
   ['touchend', 'touchmove', 'movestart'].forEach((ev) => map.on(ev, () => clearTimeout(pressT)));
   map.on('error', (e) => console.warn('map', e?.error?.message || e));
+  map.once('load', () => document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'));
   buildDock();
   setInterval(() => { if (S.layers.radar && active.radar) reloadRadar(); }, 5 * 60e3);
   setInterval(() => { if (S.layers.alerts && active.alerts) refresh('alerts'); }, 2 * 60e3);
@@ -89,7 +90,10 @@ function onStyleLoad() {
   for (const id of Object.keys(active)) { try { active[id]?.remove?.(); } catch { /* gone */ } delete active[id]; }
   addFrontImages();
   if ((S.style === 'auto' ? themeFn() : S.style) === 'dark') brightenDark();
-  applyLayers();
+  // Let the base map paint first, then bring in radar and the other layers
+  let started = false;
+  const go = () => { if (started) return; started = true; applyLayers(); };
+  map.once('idle', go); setTimeout(go, 2500);
 }
 // OpenFreeMap's dark style is very dim; lift borders, water and labels so it reads like a radar app
 function brightenDark() {

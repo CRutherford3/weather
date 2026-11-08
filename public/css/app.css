@@ -471,3 +471,4 @@ body.panel-open .panel { transform: none; }
 .tl-btn.play, .layer input:checked + .sw { background: var(--brand); }
 .sheet-sub, .card h3, .widget h3, .panel-h { font-family: 'Space Mono', ui-monospace, monospace; letter-spacing: .06em; }
 .home-dot { background: var(--brand); box-shadow: 0 0 0 7px rgba(139,92,246,.3); }
+@media (max-width: 760px) { #unitBtn, #themeBtn { display: none; } }
