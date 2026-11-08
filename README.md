@@ -41,3 +41,7 @@ npx netlify-cli dev
 ## Deploy
 
 Netlify builds from this repo automatically: publish directory `public`, functions in `netlify/functions`.
+
+### Cloudflare Pages (free)
+
+Connect this repo in Cloudflare: Workers & Pages, Create, Pages, Connect to Git. Use no build command and set the build output directory to `public`. The proxy runs from `functions/api/proxy.js` automatically.
