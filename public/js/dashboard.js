@@ -29,7 +29,7 @@ export const WIDGETS = {
   nhc_atl2: IMG('Atlantic 2-Day Outlook', 'Tropics', 'https://www.nhc.noaa.gov/xgtwo/two_atl_2d0.png', 'https://www.nhc.noaa.gov/gtwo.php?basin=atlc&fdays=2', 30),
   nhc_epac7: IMG('East Pacific 7-Day Outlook', 'Tropics', 'https://www.nhc.noaa.gov/xgtwo/two_pac_7d0.png', 'https://www.nhc.noaa.gov/gtwo.php?basin=epac&fdays=7', 30),
   goes_taw: IMG('Tropical Atlantic Satellite', 'Tropics', `${NESDIS}/SECTOR/taw/GEOCOLOR/900x540.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=taw', 10),
-  goes_gm: IMG('Gulf Satellite', 'Tropics', `${NESDIS}/SECTOR/gm/GEOCOLOR/1000x1000.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=gm', 10),
+  goes_gm: IMG('Gulf Satellite Loop', 'Tropics', `${NESDIS}/SECTOR/gm/GEOCOLOR/GOES19-GM-GEOCOLOR-1000x1000.gif`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=gm', 10),
   goes_car: IMG('Caribbean Satellite', 'Tropics', `${NESDIS}/SECTOR/car/GEOCOLOR/1000x1000.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=car', 10),
   // ---- severe ----
   spc_d1: IMG('SPC Day 1 Severe Outlook', 'Severe Weather', 'https://www.spc.noaa.gov/partners/outlooks/national/swody1.png', 'https://www.spc.noaa.gov/products/outlook/day1otlk.html', 15),
@@ -185,9 +185,9 @@ function mountMiniMap(w) {
   const el = $(`.widget[data-id="${w.id}"] .mini-map`); if (!el || !ctx.loc) return;
   const m = L.map(el, { zoomControl: false, attributionControl: false, scrollWheelZoom: false }).setView([ctx.loc.lat, ctx.loc.lon], 7);
   const dark = document.documentElement.dataset.theme !== 'light';
-  L.tileLayer(dark ? TILES.dark : TILES.light, { subdomains: 'abcd' }).addTo(m);
+  L.tileLayer(dark ? TILES.dark : TILES.light, { maxNativeZoom: 16 }).addTo(m);
   L.tileLayer(`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.8, maxNativeZoom: 12 }).addTo(m);
-  L.tileLayer(dark ? TILES.darkLabels : TILES.lightLabels, { subdomains: 'abcd' }).addTo(m);
+  L.tileLayer(dark ? TILES.darkLabels : TILES.lightLabels, { maxNativeZoom: 16 }).addTo(m);
   L.circleMarker([ctx.loc.lat, ctx.loc.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#38bdf8', fillOpacity: 1 }).addTo(m);
   el.addEventListener('dblclick', () => location.hash = '#radar');
   miniMaps.push(m);

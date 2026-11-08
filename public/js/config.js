@@ -9,13 +9,16 @@ export const DEFAULT_LOC = { lat: 33.749, lon: -84.388, name: 'Atlanta, GA' };
 export const PROXY_PATH = '/api/proxy';
 
 // Map tiles
+// Esri basemaps (free, no key). Base and labels are separate so radar sits between them.
+const ESRI = 'https://services.arcgisonline.com/ArcGIS/rest/services';
 export const TILES = {
-  dark: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
-  darkLabels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-  light: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-  lightLabels: 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
-  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  roads: 'https://{s}.basemaps.cartocdn.com/voyager_nolabels/{z}/{x}/{y}{r}.png',
+  dark: `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
+  darkLabels: `${ESRI}/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
+  light: `${ESRI}/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
+  lightLabels: `${ESRI}/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
+  satellite: `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`,
+  roads: `${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`,
+  maxNative: 16,
 };
 
 // NWS warning colors (official NWS hazard map palette, most common events)

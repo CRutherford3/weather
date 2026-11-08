@@ -9,7 +9,7 @@ export const S = {
   radarSrc: store.get('radarSrc', 'us'),
   opacity: store.get('opacity', 0.75),
   speed: store.get('speed', 450),
-  sat: store.get('satType', 'geocolor'),
+  sat: store.get('satType', 'ir'),
   layers: Object.assign({ radar: true, alerts: true, sat: false, temps: false, rain24: false, lsr: false, spc: false, tropics: true, quakes: false, fires: false }, store.get('layers', {})),
 };
 const save = () => { store.set('layers', S.layers); store.set('base', S.base); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); };
@@ -21,7 +21,7 @@ const overlay = {};
 export const LAYER_INFO = [
   { id: 'radar', name: 'Radar', desc: 'Animated precipitation (NEXRAD, updates every 5 min)' },
   { id: 'alerts', name: 'Warnings', desc: 'Live NWS warnings and watches with polygons' },
-  { id: 'sat', name: 'Satellite', desc: 'GOES-East clouds (about 30 min delay)' },
+  { id: 'sat', name: 'Satellite', desc: 'GOES-East clouds: infrared, visible, water vapor or true color' },
   { id: 'temps', name: 'Temps & Wind', desc: 'Current temperature and wind across the map' },
   { id: 'rain24', name: 'Rain Totals (24 hr)', desc: 'Radar estimated rainfall, past 24 hours' },
   { id: 'spc', name: 'Severe Outlook', desc: 'SPC Day 1 thunderstorm risk areas' },
@@ -56,8 +56,10 @@ export function setBase(theme) {
   const mode = S.base === 'auto' ? theme : S.base;
   baseLayer?.remove(); labelLayer?.remove();
   const url = mode === 'satellite' ? TILES.satellite : mode === 'roads' ? TILES.roads : mode === 'light' ? TILES.light : TILES.dark;
-  baseLayer = L.tileLayer(url, { subdomains: 'abcd', maxZoom: 19, attribution: mode === 'satellite' ? 'Imagery &copy; Esri' : '&copy; OpenStreetMap &copy; CARTO' }).addTo(map);
-  labelLayer = L.tileLayer((mode === 'light' || mode === 'roads') ? TILES.lightLabels : TILES.darkLabels, { subdomains: 'abcd', maxZoom: 19, pane: 'labels' }).addTo(map);
+  baseLayer = L.tileLayer(url, { maxNativeZoom: TILES.maxNative, maxZoom: 19, attribution: 'Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors' }).addTo(map);
+  // Street map already has its own labels
+  if (mode !== 'roads') labelLayer = L.tileLayer((mode === 'light') ? TILES.lightLabels : TILES.darkLabels, { maxNativeZoom: TILES.maxNative, maxZoom: 19, pane: 'labels' }).addTo(map);
+  else labelLayer = null;
 }
 
 export function setHome(loc) {
@@ -148,15 +150,15 @@ export function setBaseMode(v, theme) { S.base = v; save(); setBase(theme); }
 
 // ---------- satellite (NASA GIBS, GOES-East) ----------
 async function loadSat() {
-  const types = {
-    geocolor: ['GOES-East_ABI_GeoColor', 7, 'jpg'],
-    ir: ['GOES-East_ABI_Band13_Clean_Infrared', 7, 'png'],
-    vis: ['GOES-East_ABI_Band2_Red_Visible_1km', 8, 'png'],
-    wv: ['GOES-East_ABI_Air_Mass', 7, 'png'],
-  };
-  const [id, lvl, ext] = types[S.sat] || types.geocolor;
-  const t = new Date(Math.floor((Date.now() - 40 * 60e3) / 600e3) * 600e3).toISOString().replace('.000Z', 'Z');
-  setOverlay('sat', L.tileLayer(`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${id}/default/${t}/GoogleMapsCompatible_Level${lvl}/{z}/{y}/{x}.${ext}`, { pane: 'sat', opacity: 0.85, maxNativeZoom: lvl, maxZoom: 17, attribution: 'NASA GIBS / NOAA GOES' }));
+  if (S.sat === 'geocolor') {
+    // NASA GIBS true color runs about 60 to 90 minutes behind real time
+    const t = new Date(Math.floor((Date.now() - 90 * 60e3) / 600e3) * 600e3).toISOString().replace('.000Z', 'Z');
+    setOverlay('sat', L.tileLayer(`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/${t}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.jpg`, { pane: 'sat', opacity: 0.85, maxNativeZoom: 7, maxZoom: 17, attribution: 'NASA GIBS / NOAA GOES' }));
+    return;
+  }
+  // Iowa Environmental Mesonet GOES-East CONUS channels (refresh every few minutes)
+  const ch = { ir: 'ch13', vis: 'ch02', wv: 'ch09' }[S.sat] || 'ch13';
+  setOverlay('sat', L.tileLayer(`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes_east_conus_${ch}/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, { pane: 'sat', opacity: 0.75, maxNativeZoom: 9, maxZoom: 17, attribution: 'NOAA GOES via Iowa Environmental Mesonet' }));
 }
 
 // ---------- 24 hr rainfall (MRMS via IEM) ----------
