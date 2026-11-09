@@ -47,8 +47,9 @@ export default async (req: Request) => {
       status: upstream.status,
       headers: {
         "Content-Type": upstream.headers.get("content-type") || "application/json",
-        "Cache-Control": "public, max-age=60",
-        "Netlify-CDN-Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+        // map tiles change slowly; cache them at Netlify's edge so each tile only hits NOAA once
+        "Cache-Control": /image/.test(upstream.headers.get("content-type") || "") ? "public, max-age=600" : "public, max-age=60",
+        "Netlify-CDN-Cache-Control": /image/.test(upstream.headers.get("content-type") || "") ? "public, s-maxage=900, stale-while-revalidate=1800" : "public, s-maxage=60, stale-while-revalidate=120",
       },
     });
   } catch (e) {

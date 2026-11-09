@@ -399,18 +399,20 @@ ADD.buoys = async () => {
 // ================= Tropics & snow (NOAA map services) =================
 const NOAA_MS = 'https://mapservices.weather.noaa.gov';
 const agsExport = (svc, layers, img = false) => `${NOAA_MS}/${svc}/${img ? 'exportImage' : 'export'}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true${layers ? `&layers=show:${layers}` : ''}&f=image`;
+// NOAA's map images don't allow cross-site loading, so they come through our proxy (the bbox placeholder stays for MapLibre)
+const viaProxy = (u) => `/api/proxy?url=${encodeURIComponent(u).replace('%7Bbbox-epsg-3857%7D', '{bbox-epsg-3857}')}`;
 const bustQ = (min) => `&_=${Math.floor(Date.now() / (min * 60e3))}`;
-ADD.twoutlook = async () => raster('twoutlook', agsExport('tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer', '1,2,3,33') + bustQ(30), { opacity: 0.85, maxzoom: 10 });
-ADD.windprob = async () => raster('windprob', agsExport('tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer', '30,18') + bustQ(30), { opacity: 0.7, maxzoom: 10 });
-ADD.surgerisk = async () => { const id = { 1: 2, 2: 6, 3: 10, 4: 14, 5: 18 }[S.surgeCat] || 10; toast('Zoom in on the coast to see surge risk'); return raster('surgerisk', agsExport('tropical/rest/services/tropical/StormSurgeRisk/MapServer', id), { opacity: 0.75, maxzoom: 16 }); };
-ADD.snowdepth = async () => raster('snowdepth', agsExport('raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer', '0') + bustQ(180), { opacity: 0.7, maxzoom: 12, before: firstRadarOr() });
+ADD.twoutlook = async () => raster('twoutlook', viaProxy(agsExport('tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer', '1,2,3,33') + bustQ(30)), { opacity: 0.85, maxzoom: 10 });
+ADD.windprob = async () => raster('windprob', viaProxy(agsExport('tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer', '30,18') + bustQ(30)), { opacity: 0.7, maxzoom: 10 });
+ADD.surgerisk = async () => { const id = { 1: 2, 2: 6, 3: 10, 4: 14, 5: 18 }[S.surgeCat] || 10; toast('Zoom in on the coast to see surge risk'); return raster('surgerisk', viaProxy(agsExport('tropical/rest/services/tropical/StormSurgeRisk/MapServer', id)), { opacity: 0.75, maxzoom: 16 }); };
+ADD.snowdepth = async () => raster('snowdepth', viaProxy(agsExport('raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer', '0') + bustQ(180)), { opacity: 0.7, maxzoom: 12, before: firstRadarOr() });
 ADD.snowprob = async () => {
   const off = { 1: 0, 2: 5, 3: 10 }[S.snowDay] || 0, sub = { 4: 1, 8: 2, 12: 3, ice: 4 }[S.snowAmt] || 1;
-  return raster('snowprob', agsExport('vector/rest/services/precip/wpc_prob_winter_precip/MapServer', off + sub) + bustQ(120), { opacity: 0.7, maxzoom: 10, before: firstRadarOr() });
+  return raster('snowprob', viaProxy(agsExport('vector/rest/services/precip/wpc_prob_winter_precip/MapServer', off + sub) + bustQ(120)), { opacity: 0.7, maxzoom: 10, before: firstRadarOr() });
 };
 // IMS snow & ice (values 3 = sea ice, 4 = snow); everything else made transparent
 const IMS_RULE = encodeURIComponent(JSON.stringify({ rasterFunction: 'Colormap', rasterFunctionArguments: { Colormap: [[0, 0, 0, 0], [1, 0, 0, 0], [2, 0, 0, 0], [3, 150, 205, 255], [4, 255, 255, 255]] }, variableName: 'Raster' }));
-ADD.snowcover = async () => raster('snowcover', `${agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true)}&noData=0,1,2&noDataInterpretation=esriNoDataMatchAny&renderingRule=${IMS_RULE}${bustQ(360)}`, { opacity: 0.6, maxzoom: 9, before: firstRadarOr() });
+ADD.snowcover = async () => raster('snowcover', viaProxy(`${agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true)}&noData=0,1,2&noDataInterpretation=esriNoDataMatchAny&renderingRule=${decodeURIComponent(IMS_RULE)}${bustQ(360)}`), { opacity: 0.6, maxzoom: 9, before: firstRadarOr() });
 
 // ================= More marine layers =================
 // Sea surface temperature, NASA GIBS (MUR blend, yesterday's analysis)
