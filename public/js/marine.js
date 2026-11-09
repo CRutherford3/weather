@@ -169,9 +169,7 @@ export function marineHTML(Mr) {
   const links = `<div class="chips links mar-links">${[['Nautical charts', 'https://nauticalcharts.noaa.gov/viewers/'], ['Local Notice to Mariners', 'https://www.navcen.uscg.gov/local-notices-to-mariners'], ['Rip current safety', 'https://www.weather.gov/safety/ripcurrent'], ['Boating safety (USCG)', 'https://uscgboating.org/'], ['Marine forecasts', 'https://www.weather.gov/marine/']].map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t} ↗</a>`).join('')}</div>`;
 
   return `${far}${al}${outlook}<div class="mar-grid">
-    <section><h4>Right now</h4>${now.replace('</div></div>
-', `</div>${current ? '' : ''}</div>
-`)}${current ? `<div class="mar-now one">${current}</div>` : ''}</section>
+    <section><h4>Right now</h4>${now}${current ? `<div class="mar-now one">${current}</div>` : ''}</section>
     <section><h4>Seas forecast</h4>${chart}${days}</section>
     <section><h4>Tides</h4>${tides}</section>
     <section><h4>NWS marine forecast</h4>${zone}</section>${cam}</div>${links}
