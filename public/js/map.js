@@ -408,7 +408,9 @@ ADD.snowprob = async () => {
   const off = { 1: 0, 2: 5, 3: 10 }[S.snowDay] || 0, sub = { 4: 1, 8: 2, 12: 3, ice: 4 }[S.snowAmt] || 1;
   return raster('snowprob', agsExport('vector/rest/services/precip/wpc_prob_winter_precip/MapServer', off + sub) + bustQ(120), { opacity: 0.7, maxzoom: 10, before: firstRadarOr() });
 };
-ADD.snowcover = async () => raster('snowcover', agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true) + bustQ(360), { opacity: 0.55, maxzoom: 9, before: firstRadarOr() });
+// IMS snow & ice (values 3 = sea ice, 4 = snow); everything else made transparent
+const IMS_RULE = encodeURIComponent(JSON.stringify({ rasterFunction: 'Colormap', rasterFunctionArguments: { Colormap: [[0, 0, 0, 0], [1, 0, 0, 0], [2, 0, 0, 0], [3, 150, 205, 255], [4, 255, 255, 255]] }, variableName: 'Raster' }));
+ADD.snowcover = async () => raster('snowcover', `${agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true)}&noData=0,1,2&noDataInterpretation=esriNoDataMatchAny&renderingRule=${IMS_RULE}${bustQ(360)}`, { opacity: 0.6, maxzoom: 9, before: firstRadarOr() });
 
 // ================= More marine layers =================
 // Sea surface temperature, NASA GIBS (MUR blend, yesterday's analysis)
