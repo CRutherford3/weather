@@ -110,13 +110,14 @@ async function savePlace({ lat, lon }) {
 }
 async function openPlaces() {
   const list = state.favs;
+  const here = state.center?.loc || state.loc; // the crosshair spot when the card is showing it
   const rows = list.map((p, i) => `<div class="place-row" data-i="${i}"><button class="place-main" data-go="${i}"><span class="place-star">★</span><span class="place-name">${esc(p.name)}</span><span class="place-temp" id="pt${i}">--</span></button><button class="place-del" data-del="${i}" aria-label="Remove ${esc(p.name)}">✕</button></div>`).join('');
   openSheet('My Places', `${list.length ? `<div class="place-list">${rows}</div>` : '<p class="empty">No saved places yet.</p>'}
-    <button class="btn wide" id="addHere">+ Save ${esc(state.loc?.name || 'this location')}</button>
+    ${here && !state.favs.some((f) => near(f, here)) ? `<button class="btn wide" id="addHere">+ Save ${esc(here.name || 'this location')}</button>` : `<p class="muted small sheet-foot">★ ${esc(here?.name || '')} is saved.</p>`}
     <p class="muted small sheet-foot">Tip: tap anywhere on the map and choose <b>Save place</b>. Saved places show as stars on the map.</p>`, async (b) => {
     $$('[data-go]', b).forEach((x) => x.onclick = () => { const p = state.favs[+x.dataset.go]; closeSheet(); setLocation({ ...p }); });
     $$('[data-del]', b).forEach((x) => x.onclick = () => { state.favs = state.favs.filter((_, i) => i !== +x.dataset.del); saveFavs(); openPlaces(); });
-    $('#addHere', b).onclick = () => { if (!isFav()) { state.favs = [...state.favs, { lat: state.loc.lat, lon: state.loc.lon, name: state.loc.name }]; saveFavs(); } openPlaces(); };
+    if ($('#addHere', b)) $('#addHere', b).onclick = () => { if (!state.favs.some((f) => near(f, here))) { state.favs = [...state.favs, { lat: here.lat, lon: here.lon, name: here.name }]; saveFavs(); toast(`Saved ${here.name}`); } openPlaces(); };
     try { (await placesNow(list)).forEach((r, i) => { const el = $(`#pt${i}`, b); if (el && r.current) el.innerHTML = `${icon(wx(r.current.weather_code, r.current.is_day).icon, 26)} ${fmtT(r.current.temperature_2m)}`; }); } catch { /* temps optional */ }
   });
 }

@@ -1,5 +1,6 @@
 // Customizable dashboard: widgets can be added, removed, resized and dragged into any order. Saved per browser.
 import { store, esc, $, $$, toast, getData } from './util.js';
+import { radarSites } from './api.js';
 import * as F from './forecast.js';
 import { TILES } from './config.js';
 import { adSlot, fillAds, has, plan as curPlan, PAGE_LIMIT, openPricing } from './plan.js';
@@ -27,6 +28,7 @@ export const WIDGETS = {
   details: { title: 'Conditions Detail', cat: 'Your Location', size: 'l', kind: 'local' },
   minimap: { title: 'Live Radar', cat: 'Your Location', size: 'l', kind: 'local' },
   nwsloop: { title: 'Local NWS Radar Loop', cat: 'Your Location', size: 'm', kind: 'local' },
+  site_loop: { title: 'Radar Site Loop (pick any)', cat: 'Radar Loops', size: 'm', kind: 'local' },
   aqi: { title: 'Air Quality', cat: 'Your Location', size: 's', kind: 'local' },
   sun: { title: 'Sun & Moon', cat: 'Your Location', size: 's', kind: 'local' },
   nwstext: { title: 'NWS Forecast Text', cat: 'Your Location', size: 'l', kind: 'local' },
@@ -143,9 +145,9 @@ export const WIDGETS = {
 export const TEMPLATES = {
   mine: { name: 'My Weather', w: [['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'], ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'm']] },
   tropics: { name: 'Tropics', pro: true, w: [['storms', 'l'], ['spaghetti', 'xl'], ['nhc_atl7', 'm'], ['nhc_atl2', 'm'], ['nhc_epac7', 'm'], ['goes_taw_loop', 'l'], ['goes_gm', 'm'], ['goes_car_loop', 'm'], ['goes_pr', 'm'], ['cimss_shear', 'm'], ['cimss_steer', 'm'], ['cimss_vort', 'm'], ['cimss_sal', 'm'], ['sst_atl', 'm'], ['ssta_atl', 'm'], ['ssta_glob', 'm'], ['opc_atl', 'm'], ['goes_fd', 'm'], ['models_links', 'm'], ['scales', 'l']] },
-  severe: { name: 'Severe', pro: true, w: [['alerts', 'm'], ['spc_d1', 'm'], ['spc_torn', 'm'], ['spc_hail', 'm'], ['spc_wind', 'm'], ['spc_ww', 'm'], ['spc_md', 'm'], ['radar_conus', 'l'], ['goes_glm_loop', 'm'], ['meso_scp', 'm'], ['meso_stp', 'm'], ['meso_cape', 'm'], ['meso_shr', 'm'], ['spc_rpt', 'm'], ['spc_d2', 'm'], ['spc_d3', 'm'], ['spc_d48', 'm'], ['nws_haz', 'l'], ['hailhist', 'l'], ['scales', 'l']] },
+  severe: { name: 'Severe', pro: true, w: [['alerts', 'm'], ['spc_d1', 'm'], ['spc_torn', 'm'], ['spc_hail', 'm'], ['spc_wind', 'm'], ['spc_ww', 'm'], ['spc_md', 'm'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_glm_loop', 'm'], ['meso_scp', 'm'], ['meso_stp', 'm'], ['meso_cape', 'm'], ['meso_shr', 'm'], ['spc_rpt', 'm'], ['spc_d2', 'm'], ['spc_d3', 'm'], ['spc_d48', 'm'], ['nws_haz', 'l'], ['hailhist', 'l'], ['scales', 'l']] },
   rain: { name: 'Rain & Winter', w: [['wpc_sfc', 'l'], ['ncfc1', 'm'], ['ncfc2', 'm'], ['ncfc3', 'm'], ['wpc_qpf1', 'm'], ['wpc_qpf2', 'm'], ['wpc_qpf3', 'm'], ['wpc_qpf5', 'm'], ['wpc_qpf7', 'm'], ['wpc_ero', 'm'], ['wpc_ero2', 'm'], ['wpc_ero3', 'm'], ['cpc_610t', 'm'], ['cpc_610p', 'm'], ['cpc_814t', 'm'], ['cpc_814p', 'm'], ['cpc_34t', 'm'], ['cpc_30t', 'm'], ['usdm', 'm']] },
-  sat: { name: 'Satellite & Radar', w: [['goes_conus_loop', 'l'], ['radar_conus', 'l'], ['goes_ir', 'm'], ['goes_wv_loop', 'm'], ['goes_vis', 'm'], ['goes_air', 'm'], ['goes_sand', 'm'], ['goes_glm', 'm'], ['goes_fire', 'm'], ['sec_ne', 'm'], ['sec_sp', 'm'], ['sec_cgl', 'm'], ['sec_psw', 'm'], ['rl_ne', 'm'], ['rl_sp', 'm'], ['rl_psw', 'm'], ['radar_se', 'm']] },
+  sat: { name: 'Satellite & Radar', w: [['goes_conus_loop', 'l'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_ir', 'm'], ['goes_wv_loop', 'm'], ['goes_vis', 'm'], ['goes_air', 'm'], ['goes_sand', 'm'], ['goes_glm', 'm'], ['goes_fire', 'm'], ['sec_ne', 'm'], ['sec_sp', 'm'], ['sec_cgl', 'm'], ['sec_psw', 'm'], ['rl_ne', 'm'], ['rl_sp', 'm'], ['rl_psw', 'm'], ['radar_se', 'm']] },
   space: { name: 'Space & Marine', w: [['aurora_n', 'm'], ['aurora_tn', 'm'], ['kp', 'm'], ['swx', 'l'], ['sun', 'm'], ['opc_atl', 'l'], ['opc_pac', 'l'], ['marine_links', 'm']] },
 };
 const fromTpl = (k) => TEMPLATES[k].w.map(([type, size]) => ({ id: uid(), type, size }));
@@ -194,6 +196,7 @@ export function initDashboard() {
   window.addEventListener('plan', () => { if (!$('#view-dashboard').hidden) render(); });
   $('#dashReset').onclick = () => { if (confirmInline('#dashReset', 'Reset layout?')) { layout = fromTpl('mine'); save(); render(); } };
   $('#dashGrid').addEventListener('click', onGridClick);
+  $('#dashGrid').addEventListener('change', onGridChange);
   if (window.Sortable) {
     sortable = window.Sortable.create($('#dashGrid'), { animation: 180, handle: '.w-head', draggable: '.widget', disabled: true, ghostClass: 'w-ghost',
       onEnd: () => { const order = $$('#dashGrid > .widget').map((e) => e.dataset.id); layout.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)); save(); } });
@@ -217,6 +220,7 @@ function render() {
   $('#dashGrid').innerHTML = layout.map((w, i) => widgetHTML(w) + ((i + 1) % 6 === 0 ? adSlot('inline') : '')).join('') + (layout.length % 6 ? adSlot('inline') : '');
   fillAds($('#dashGrid'));
   layout.forEach((w) => { if (w.type === 'minimap') mountMiniMap(w); });
+  fillSiteSelects();
   $$('[data-hh]').forEach((el) => window.dispatchEvent(new CustomEvent('hail-history', { detail: el })));
   wireAlerts($('#dashGrid'));
 }
@@ -247,6 +251,7 @@ function bodyHTML(w, def) {
   if (w.type === 'models_links') return modelLinksHTML();
   if (w.type === 'scales') return scalesHTML();
   if (w.type === 'marine_links') return marineHTML();
+  if (w.type === 'site_loop') return siteLoopHTML(w);
   if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
   if (!M) return '<div class="empty">Loading…</div>';
   switch (w.type) {
@@ -318,6 +323,23 @@ function marineHTML() {
   return `<div class="link-list">${l.map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t}<span>↗</span></a>`).join('')}</div>`;
 }
 
+// Any NEXRAD site, reflectivity or velocity loop (NWS RIDGE)
+function siteLoopHTML(w) {
+  const site = w.params?.site || ctx.M?.nws?.radar || 'KMLB', prod = w.params?.prod || 'ref';
+  const src = `https://radar.weather.gov/ridge/standard/${prod === 'vel' ? 'base_velocity/' : ''}${site}_loop.gif`;
+  return `<div class="site-ctl"><select data-site="${w.id}"><option value="${site}">${site}</option></select>
+    <div class="seg small"><button data-sprod="ref" data-w="${w.id}" class="${prod === 'ref' ? 'on' : ''}">Reflectivity</button><button data-sprod="vel" data-w="${w.id}" class="${prod === 'vel' ? 'on' : ''}">Velocity</button></div></div>
+    <img class="w-img" data-src="${src}" data-refresh="5" src="${bust(src, 5)}" alt="${site} radar loop">`;
+}
+async function fillSiteSelects() {
+  const sels = $$('select[data-site]'); if (!sels.length) return;
+  let list; try { list = await radarSites(); } catch { return; }
+  const c = ctx.loc || { lat: 33.75, lon: -84.39 };
+  const d = (x) => Math.round(Math.hypot(x.lat - c.lat, (x.lon - c.lon) * Math.cos(c.lat * Math.PI / 180)) * 69);
+  const sorted = [...list].sort((a, b) => d(a) - d(b));
+  sels.forEach((sel) => { const cur = sel.value; sel.innerHTML = sorted.map((x) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${x.id} · ${esc(x.name)} (${d(x)} mi)</option>`).join(''); });
+}
+
 function stormsHTML(storms) {
   if (!storms) return '<div class="empty">Loading tropical data…</div>';
   if (!storms.length) return '<div class="empty ok">✓ No active tropical systems right now.</div><img class="w-img" data-src="https://www.nhc.noaa.gov/xgtwo/two_atl_7d0.png" data-refresh="30" src="' + bust('https://www.nhc.noaa.gov/xgtwo/two_atl_7d0.png', 30) + '" alt="NHC Atlantic outlook">';
@@ -345,7 +367,14 @@ function mountMiniMap(w) {
   miniMaps.push(m);
 }
 
+function onGridChange(e) {
+  const sel = e.target.closest('select[data-site]'); if (!sel) return;
+  const w = layout.find((x) => x.id === sel.dataset.site); if (!w) return;
+  w.params = { ...(w.params || {}), site: sel.value }; save(); render();
+}
 function onGridClick(e) {
+  const sp = e.target.closest('[data-sprod]');
+  if (sp) { const w = layout.find((x) => x.id === sp.dataset.w); if (w) { w.params = { ...(w.params || {}), prod: sp.dataset.sprod }; save(); render(); } return; }
   if (e.target.closest('[data-unlock]')) { openPricing('The hurricane tracker is part of Updraft Plus.'); return; }
   const b = e.target.closest('[data-act]'); const wEl = e.target.closest('.widget');
   if (b && wEl) {

@@ -576,3 +576,11 @@ table.scale { width: 100%; border-collapse: collapse; font-size: 12.5px; } .scal
 .mtg:hover { border-color: var(--accent); }
 .mtg.off { opacity: .4; } .mtg.off i { background: transparent !important; outline: 1.5px solid var(--muted); }
 .mtg.reset { border-style: dashed; color: var(--accent); }
+/* radar site picker */
+.site-pick { display: grid; gap: 10px; }
+.site-pick select, .site-ctl select { width: 100%; padding: 9px 10px; border-radius: 11px; border: 1px solid var(--line); background: var(--card2); color: var(--text); font: inherit; font-size: 14px; }
+.lrow-inline { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.site-ctl { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+.seg.small button { padding: 5px 9px; font-size: 12.5px; }
+.legend-bar.vel { background: linear-gradient(90deg, #00e000, #007a00, #555, #7a0000, #ff3030) !important; }
+.opt-thumb.site { background: radial-gradient(circle at 50% 50%, #8b5cf6 0 18%, transparent 19%), conic-gradient(from 0deg, #22c55e33, #22c55e 30deg, transparent 31deg), #0b1020; }

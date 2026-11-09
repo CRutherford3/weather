@@ -108,6 +108,21 @@ export async function gridPoints(lats, lons) {
 }
 
 // ---------- national / map feeds ----------
+// NEXRAD radar sites (159 WSR-88D). Returns [{id:'KMLB', code:'MLB', name, lat, lon}]
+let sitesP;
+export function radarSites() {
+  return (sitesP ||= getData('https://api.weather.gov/radar/stations?stationType=WSR-88D', { headers: NWS_HEADERS, cache: 86400e3, timeout: 30000 })
+    .then((j) => j.features.map((f) => ({ id: f.properties.id, code: f.properties.id.slice(1), name: f.properties.name, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })).sort((a, b) => a.id.localeCompare(b.id)))
+    .catch((e) => { sitesP = null; throw e; }));
+}
+export const nearestSite = (list, lat, lon) => list.reduce((best, s) => { const d = (s.lat - lat) ** 2 + ((s.lon - lon) * Math.cos(lat * Math.PI / 180)) ** 2; return d < best.d ? { s, d } : best; }, { s: null, d: Infinity }).s;
+// Scan times for one radar over the last hour (IEM)
+export async function siteScans(code, prod, minutes = 60) {
+  const f = (d) => d.toISOString().slice(0, 16) + 'Z';
+  const j = await getData(`https://mesonet.agron.iastate.edu/json/radar.py?operation=list&radar=${code}&product=${prod}&start=${f(new Date(Date.now() - minutes * 60e3))}&end=${f(new Date())}`, { cache: 60e3 });
+  return (j.scans || []).map((x) => x.ts);
+}
+
 export const feeds = {
   alerts: () => getData('https://api.weather.gov/alerts/active?status=actual', { headers: NWS_HEADERS, timeout: 30000, cache: 60e3 }),
   lsr: () => getData('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=24', { cache: 300e3 }),

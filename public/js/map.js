@@ -3,7 +3,7 @@
 // SPC outlook, mesoscale discussions, storm reports, hurricanes, drought, earthquakes, wildfires, ISS.
 import { alertColor, DBZ_LEGEND } from './config.js';
 import { store, getData, $, $$, esc, U, fmtT, fmtW, compass, toast, tempColor, wx, icon, localTime, aqiInfo, openSheet, closeSheet } from './util.js';
-import { feeds, gridPoints, quickPoint, aqGrid } from './api.js';
+import { feeds, gridPoints, quickPoint, aqGrid, radarSites, nearestSite, siteScans } from './api.js';
 import { KEYS } from './config.js';
 import { canLayer, tierOf, badge, gate } from './plan.js';
 
@@ -29,7 +29,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'),
@@ -38,13 +38,15 @@ export const S = {
   sat: store.get('satType', 'ir'),
   rain: store.get('rainType', '24h'),
   hail: store.get('hailHours', '72'),
+  site: store.get('radarSite', null),     // e.g. 'MLB' for KMLB
+  siteProd: store.get('siteProd', 'N0B'), // N0B reflectivity, N0U velocity
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
-const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); };
+const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
 
 export const LAYER_GROUPS = [
   ['Radar & Satellite', [
-    ['radar', 'Radar', 'radarOpts'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
+    ['radar', 'Radar', 'radarOpts'], ['sites', 'Radar Sites (pick one)'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
@@ -213,7 +215,13 @@ const R = { frames: [], idx: 0, playing: true, timer: null, hold: 0 };
 ADD.radar = async () => { await buildRadar(); return { remove: clearRadar }; };
 async function buildRadar() {
   const frames = [];
-  if (S.radarSrc === 'us') {
+  if (S.radarSrc === 'site') {
+    if (!S.site) { const c = map.getCenter(); S.site = nearestSite(await radarSites(), c.lat, c.lng)?.code || 'MLB'; save(); }
+    let scans = [];
+    try { scans = (await siteScans(S.site, S.siteProd)).slice(-12); } catch { /* fall back to latest */ }
+    if (!scans.length) frames.push({ t: Date.now(), url: `${IEM}/ridge::${S.site}-${S.siteProd}-0/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 120e3)}`, maxzoom: 12, site: true });
+    for (const ts of scans) frames.push({ t: new Date(ts).getTime(), url: `${IEM}/ridge::${S.site}-${S.siteProd}-${ts.replace(/[-:TZ]/g, '').slice(0, 12)}/{z}/{x}/{y}.png`, maxzoom: 12 });
+  } else if (S.radarSrc === 'us') {
     let base = Math.floor(Date.now() / 300e3) * 300e3 - 300e3;
     try { const j = await feeds.iemTms(); const s = (j.services || []).find((x) => /n0q/i.test(x.id || '') && x.utc_valid); if (s) base = new Date(s.utc_valid).getTime(); } catch { /* estimate */ }
     const bust = Math.floor(Date.now() / 300e3);
@@ -246,7 +254,7 @@ function showFrame(i) {
   R.frames.forEach((f, k) => { if (map.getLayer(f.id)) map.setPaintProperty(f.id, 'raster-opacity', k === i ? S.opacity : 0); });
   const f = R.frames[i];
   $('#tlTime').textContent = localTime(f.t);
-  $('#tlAgo').textContent = i === R.frames.length - 1 ? 'Latest' : `${Math.round((Date.now() - f.t) / 60e3)} min ago`;
+  $('#tlAgo').textContent = (S.radarSrc === 'site' ? `K${S.site} · ` : '') + (i === R.frames.length - 1 ? 'Latest' : `${Math.round((Date.now() - f.t) / 60e3)} min ago`);
   $('#tlRange').value = i;
 }
 function play() {
@@ -319,6 +327,30 @@ ADD.lsr = async () => {
   j.features.forEach((f) => { f.properties.c = col(f.properties.typetext); });
   return geo('lsr', j, [{ type: 'circle', top: true, paint: { 'circle-radius': 6, 'circle-color': ['get', 'c'], 'circle-stroke-color': '#000', 'circle-stroke-width': 1 } }],
     (f, ll) => { const p = f.properties; popup(ll, `<b>${esc(p.typetext)}</b> ${p.magnitude ? esc(p.magnitude) + (p.unit ? ' ' + esc(p.unit) : '') : ''}<br>${esc(p.city)}, ${esc(p.st || p.state || '')}<br><small>${p.valid ? new Date(String(p.valid).endsWith('Z') ? p.valid : p.valid + 'Z').toLocaleString() : ''}</small><p>${esc(p.remark || '')}</p>`); });
+};
+
+// ================= Radar sites: tap one to view that single radar =================
+export async function useSite(code, prod) {
+  S.site = code; if (prod) S.siteProd = prod; S.radarSrc = 'site'; S.layers.radar = true; save();
+  refresh('radar'); updateDock(); if (active.sites) refresh('sites');
+}
+ADD.sites = async () => {
+  const list = await radarSites();
+  const fc = { type: 'FeatureCollection', features: list.map((x) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [x.lon, x.lat] }, properties: { id: x.id, code: x.code, name: x.name, on: S.radarSrc === 'site' && S.site === x.code ? 1 : 0 } })) };
+  return geo('sites', fc, [
+    { type: 'circle', top: true, paint: { 'circle-radius': ['case', ['==', ['get', 'on'], 1], 9, 6], 'circle-color': ['case', ['==', ['get', 'on'], 1], '#8b5cf6', '#0b1020'], 'circle-stroke-color': ['case', ['==', ['get', 'on'], 1], '#fff', '#a78bfa'], 'circle-stroke-width': 2 } },
+    { type: 'symbol', top: true, layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.35], 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': false }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b1020', 'text-halo-width': 1.6 } },
+  ], (f, ll) => {
+    const p = f.properties, cur = S.radarSrc === 'site' && S.site === p.code;
+    const pop = popup(f.geometry.coordinates, `<div class="qp"><div class="qp-name">${esc(p.id)} · ${esc(p.name)}</div><div class="qp-row">${cur ? 'Showing this radar now' : 'NEXRAD Doppler radar'}</div>
+      <div class="qp-btns"><button class="btn small${cur && S.siteProd === 'N0B' ? '' : ' ghost'}" data-sp="N0B">Reflectivity</button><button class="btn small${cur && S.siteProd === 'N0U' ? '' : ' ghost'}" data-sp="N0U">Velocity</button></div>
+      ${cur ? '<div class="qp-btns"><button class="btn small ghost" data-sp="mosaic">Back to US mosaic</button></div>' : ''}</div>`);
+    setTimeout(() => pop.getElement()?.querySelectorAll('[data-sp]').forEach((b) => b.onclick = () => {
+      pop.remove();
+      if (b.dataset.sp === 'mosaic') { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); return; }
+      useSite(p.code, b.dataset.sp);
+    }), 0);
+  });
 };
 
 // ================= Hail map: storm reports sized by stone size + SPC hail risk =================
@@ -611,7 +643,8 @@ function buildDock() {
 }
 function updateDock() {
   const on = S.layers.radar;
-  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : 'Global Radar') : 'Radar Off';
+  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : S.radarSrc === 'site' ? `K${S.site || ''} ${S.siteProd === 'N0U' ? 'Velocity' : 'Radar'}` : 'Global Radar') : 'Radar Off';
+  $('#legendBar').classList.toggle('vel', on && S.radarSrc === 'site' && S.siteProd === 'N0U');
   $('#legendBar').style.opacity = on ? 1 : 0.25;
   $('#tlPlay').disabled = !on;
   if (!on) { $('#tlTime').textContent = '--'; $('#tlAgo').textContent = ''; }
@@ -621,15 +654,31 @@ function openSourceSheet() {
   openSheet('Radar', `<div class="opt-list">
     ${opt('us', 'Hi-Def Radar', 'US NEXRAD mosaic · sharpest detail · every 5 minutes')}
     ${opt('global', 'Global Radar', 'Worldwide coverage · lower resolution')}
+    ${opt('site', 'Single Radar Site', `${S.site ? `K${S.site} · ` : ''}one Doppler radar, full detail, reflectivity or velocity`)}
     ${opt('off', 'Radar Off', 'Hide the radar loop')}</div>
+    <div class="sheet-sub">Radar site</div>
+    <div class="set-pad site-pick"><select id="sitePick"><option>Loading radar sites…</option></select>
+      <div class="seg" id="siteProd"><button data-v="N0B" class="${S.siteProd === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-v="N0U" class="${S.siteProd === 'N0U' ? 'on' : ''}">Velocity</button></div>
+      <label class="lrow-inline"><input type="checkbox" id="showSites" ${S.layers.sites ? 'checked' : ''}> Show radar sites on the map (tap one to switch)</label></div>
     <div class="sheet-sub">Loop settings</div>
     <label class="slider">Opacity <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="${S.opacity}"></label>
     <label class="slider">Loop speed <input type="range" id="speed" min="150" max="1000" step="50" value="${1150 - S.speed}"></label>`, (b) => {
     $$('.opt-row', b).forEach((r) => r.onclick = () => {
       const v = r.dataset.v;
       if (v === 'off') S.layers.radar = false; else { S.layers.radar = true; if (S.radarSrc !== v) { S.radarSrc = v; disable('radar'); } }
+      if (v === 'site') S.layers.sites = true;
       applyLayers(); closeSheet();
     });
+    radarSites().then((list) => {
+      const c = map.getCenter(), near = nearestSite(list, c.lat, c.lng);
+      const d = (x) => Math.round(Math.hypot(x.lat - c.lat, (x.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) * 69);
+      const sorted = [...list].sort((a, b) => d(a) - d(b));
+      const sel = $('#sitePick', b); if (!sel) return;
+      sel.innerHTML = sorted.map((x) => `<option value="${x.code}" ${(S.site || near?.code) === x.code ? 'selected' : ''}>${x.id} · ${esc(x.name)} (${d(x)} mi)</option>`).join('');
+      sel.onchange = () => { useSite(sel.value); const r = list.find((x) => x.code === sel.value); if (r) map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), 7) }); };
+    }).catch(() => { const sel = $('#sitePick', b); if (sel) sel.innerHTML = '<option>Radar sites unavailable</option>'; });
+    $$('#siteProd button', b).forEach((x) => x.onclick = () => { $$('#siteProd button', b).forEach((y) => y.classList.toggle('on', y === x)); useSite(S.site || $('#sitePick', b).value, x.dataset.v); });
+    $('#showSites', b).onchange = (e) => toggleLayer('sites', e.target.checked);
     $('#opacity', b).oninput = (e) => { S.opacity = +e.target.value; showFrame(R.idx); save(); };
     $('#speed', b).oninput = (e) => { S.speed = 1150 - +e.target.value; save(); if (R.playing) play(); };
   });
