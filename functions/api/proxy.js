@@ -17,7 +17,7 @@ const ALLOWED = new Set([
   'api.wheretheiss.at',
   'tiles.openfreemap.org',
   'router.project-osrm.org',
-  'developer.nrel.gov',
+  'developer.nlr.gov',
 ]);
 
 export async function onRequestGet({ request }) {

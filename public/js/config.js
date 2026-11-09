@@ -58,7 +58,7 @@ export const MODELS = [
 // Free API keys. These are visible in the browser, so restrict each key to weather.dialcheck.io in the provider's dashboard.
 export const KEYS = {
   tomtom: '',          // Traffic layer. Free key at developer.tomtom.com (50,000 map tiles a day free).
-  nrel: 'DEMO_KEY',    // EV chargers (US DOE AFDC). DEMO_KEY is rate limited; get a free key at developer.nrel.gov/signup.
+  nrel: 'DEMO_KEY',    // EV chargers (US DOE AFDC). DEMO_KEY is rate limited; get a free key at developer.nlr.gov/signup.
 };
 // Google AdSense. Leave client blank to show house ads ("Go ad-free") in every slot.
 export const ADS = { client: '', slots: { banner: '', box: '', tall: '', inline: '' } };

@@ -147,7 +147,7 @@ async function planEV(r, t0) {
   // simplify the line for the request (about 120 points)
   const step = Math.max(1, Math.floor(r.coords.length / 120));
   const pts = r.coords.filter((_, i) => i % step === 0 || i === r.coords.length - 1).map(([x, y]) => `${x.toFixed(4)} ${y.toFixed(4)}`);
-  const url = `https://developer.nrel.gov/api/alt-fuel-stations/v1/nearby-route.json?api_key=${KEYS.nrel}&fuel_type=ELEC&ev_charging_level=dc_fast&status=E&access=public&ev_connector_type=${ev.plug}&distance=3&limit=all&route=${encodeURIComponent(`LINESTRING(${pts.join(',')})`)}`;
+  const url = `https://developer.nlr.gov/api/alt-fuel-stations/v1/nearby-route.json?api_key=${KEYS.nrel}&fuel_type=ELEC&ev_charging_level=dc_fast&status=E&access=public&ev_connector_type=${ev.plug}&distance=3&limit=all&route=${encodeURIComponent(`LINESTRING(${pts.join(',')})`)}`;
   let list = [];
   try { list = (await getData(url, { timeout: 30000 })).fuel_stations || []; }
   catch (e) { throw new Error('Charger lookup is unavailable right now (the free charger key may be over its hourly limit).'); }
