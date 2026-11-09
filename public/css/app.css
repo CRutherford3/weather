@@ -12,6 +12,7 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
 body { overflow: hidden; --top: calc(60px + env(safe-area-inset-top)); --bottom: 0px; }
 a { color: var(--accent); text-decoration: none; }
@@ -56,7 +57,7 @@ body:has(.alert-banner:not([hidden])) { --banner: 38px; }
 /* ===== Views ===== */
 main { position: fixed; top: calc(var(--top) + var(--banner, 0px)); bottom: var(--bottom); left: 0; right: 0; }
 .view { position: absolute; inset: 0; }
-.view.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.view.scroll { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 
 /* ===== Radar view ===== */
 #map { position: absolute; inset: 0; background: var(--bg); }
@@ -603,7 +604,8 @@ body.popup-open .crosshair { opacity: 0; }
 /* marine */
 .wave-dir { font-style: normal; display: inline-block; margin-left: 2px; font-size: 11px; }
 .mar-note { padding: 8px 12px; border-radius: 10px; background: rgba(234,179,8,.14); font-size: 13px; margin-bottom: 10px; }
-.mar-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+.mar-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; }
+.mar-grid > section { min-width: 0; }
 .mar-grid h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .mar-now { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 6px; }
 .mar-tile { background: var(--card2); border-radius: 12px; padding: 10px; display: grid; gap: 1px; }
@@ -618,7 +620,8 @@ body.popup-open .crosshair { opacity: 0; }
 .mar-tides div { background: var(--card2); border-radius: 10px; padding: 7px 9px; display: grid; font-size: 12.5px; border-left: 3px solid #22d3ee; }
 .mar-tides div.lo { border-left-color: #64748b; } .mar-tides small { color: var(--muted); }
 .mar-zone p { margin: 6px 0; font-size: 13.5px; line-height: 1.45; }
-@media (max-width: 900px) { .mar-grid { grid-template-columns: 1fr; } .mar-now, .mar-tides { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .mar-grid { grid-template-columns: minmax(0, 1fr); } .mar-now, .mar-tides { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .mar-days { font-size: 12.5px; } .mar-days td, .mar-days th { padding: 5px 2px; } }
 /* minimize button + minimized pill */
 .wx-top { grid-template-columns: 40px minmax(0, 1fr) 40px 36px; }
 .wx-min { width: 36px; }
@@ -637,7 +640,8 @@ body.popup-open .crosshair { opacity: 0; }
 .mar-alerts { display: grid; gap: 6px; margin-bottom: 10px; } .mar-alerts div { background: rgba(239,68,68,.14); border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; }
 .mar-now.one { grid-template-columns: repeat(4, 1fr); }
 .mar-cam { grid-column: 1 / -1; }
-.cam-strip { overflow-x: auto; border-radius: 10px; background: #000; -webkit-overflow-scrolling: touch; }
+.cam-strip { max-width: 100%; overflow-x: auto; border-radius: 10px; background: #000; -webkit-overflow-scrolling: touch; }
 .cam-strip img { height: 180px; display: block; max-width: none; }
 .cam-pop .cam-strip img { height: 120px; }
 .mar-links { margin-top: 12px; }
+.mar-days-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }

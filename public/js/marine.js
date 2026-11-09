@@ -115,11 +115,11 @@ export function marineHTML(Mr) {
   let days = '';
   const w = Mr.wave?.daily, wn = Mr.wind?.daily;
   if (w) {
-    days = `<table class="mar-days"><tr><th></th><th>Seas</th><th>Swell</th><th>Wind</th><th>Water</th></tr>${w.time.map((t, i) => {
+    days = `<div class="mar-days-wrap"><table class="mar-days"><tr><th></th><th>Seas</th><th>Swell</th><th>Wind</th><th>Water</th></tr>${w.time.map((t, i) => {
       const sst = Mr.wave.hourly?.sea_surface_temperature?.[i * 24 + 14];
       return `<tr><td>${i ? dayName(t) : 'Today'}</td><td><b>${ft(w.wave_height_max[i])}</b> ${arrow(w.wave_direction_dominant?.[i])}</td><td>${ft(w.swell_wave_height_max[i])} <small>${w.swell_wave_period_max[i] ? Math.round(w.swell_wave_period_max[i]) + 's' : ''}</small></td>
         <td>${wn ? `${wn.wind_direction_10m_dominant[i] != null ? compass(wn.wind_direction_10m_dominant[i]) : ''} ${kn(wn.wind_speed_10m_max[i])} <small>G${Math.round(wn.wind_gusts_10m_max[i])}</small>` : '--'}</td><td>${sst != null ? fmtT(sst) : '--'}</td></tr>`;
-    }).join('')}</table>`;
+    }).join('')}</table></div>`;
   }
   // 72-hour wave height chart
   let chart = '';
