@@ -35,6 +35,7 @@ export function openRoute() {
       <button class="rt-swap" id="rtSwap" title="Swap" aria-label="Swap start and destination">⇅</button>
       <label class="rt-f"><span>To</span><input id="rtTo" autocomplete="off" value="${esc(st.to?.name || '')}" placeholder="Destination"><div class="rt-res" id="rtToRes" hidden></div></label>
       <label class="rt-f"><span>Leave</span><select id="rtDep">${departOpts()}</select></label>
+      <label class="rt-f" id="rtDepAtL" hidden><span>Departure date & time</span><input type="datetime-local" id="rtDepAt" min="${localInput(Date.now())}" max="${localInput(Date.now() + 7 * 864e5)}" value="${localInput(Date.now() + 36e5)}"></label>
       <div class="rt-ev" id="rtEv" ${st.mode === 'ev' ? '' : 'hidden'}>
         <label><span>Full range (mi)</span><input type="number" id="evRange" min="60" max="600" value="${ev.range}"></label>
         <label><span>Charge now %</span><input type="number" id="evCharge" min="5" max="100" value="${ev.charge}"></label>
@@ -50,7 +51,14 @@ export function openRoute() {
     $('#rtSwap', b).onclick = () => { [st.from, st.to] = [st.to, st.from]; $('#rtFrom', b).value = st.from?.name || ''; $('#rtTo', b).value = st.to?.name || ''; };
     $$('#evNets [data-net]', b).forEach((x) => x.onclick = () => x.classList.toggle('on'));
     $('#rtDep', b).value = String(st.depart);
-    $('#rtDep', b).onchange = (e) => { st.depart = +e.target.value; };
+    $('#rtDep', b).onchange = (e) => {
+      const custom = e.target.value === 'custom';
+      $('#rtDepAtL', b).hidden = !custom;
+      if (custom) { $('#rtDepAt', b).focus(); setCustom(); } else st.depart = +e.target.value;
+    };
+    // forecasts reach about 7 days out
+    const setCustom = () => { const t = new Date($('#rtDepAt', b).value).getTime(); if (!isNaN(t)) st.depart = Math.max(0, Math.min(7 * 24, (t - Date.now()) / 36e5)); };
+    $('#rtDepAt', b).onchange = setCustom;
     $('#rtGo', b).onclick = () => {
       Object.assign(st.ev, { range: +$('#evRange', b).value || 250, charge: +$('#evCharge', b).value || 90, reserve: +$('#evReserve', b).value || 10, plug: $('#evPlug', b).value, nets: $$('#evNets .on', b).map((x) => x.dataset.net) });
       store.set('ev', st.ev); plan();
@@ -60,14 +68,14 @@ export function openRoute() {
 }
 
 function departOpts() {
-  const now = new Date(), out = [[0, 'Now']];
-  for (const h of [1, 2, 3, 4, 6, 8, 12]) out.push([h, `In ${h} hour${h > 1 ? 's' : ''} (${timeStr(+now + h * 36e5)})`]);
-  for (let d = 1; d <= 5; d++) for (const hr of [6, 9, 12]) {
-    const t = new Date(now); t.setDate(t.getDate() + d); t.setHours(hr, 0, 0, 0);
-    out.push([((t - now) / 36e5).toFixed(2), `${t.toLocaleDateString([], { weekday: 'short' })} ${timeStr(+t)}`]);
-  }
+  const now = Date.now(), out = [[0, 'Now']];
+  for (const h of [1, 2, 3, 4, 8, 12, 24]) out.push([h, `In ${h} hour${h > 1 ? 's' : ''} (${dayTime(now + h * 36e5)})`]);
+  if (st.depart && ![0, 1, 2, 3, 4, 8, 12, 24].includes(st.depart)) out.push([st.depart, dayTime(now + st.depart * 36e5)]);
+  out.push(['custom', 'Pick a date & time…']);
   return out.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('');
 }
+// value for <input type="datetime-local"> in local time
+const localInput = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
 const timeStr = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const dayTime = (ms) => { const d = new Date(ms), today = new Date().toDateString() === d.toDateString(); return today ? timeStr(ms) : `${d.toLocaleDateString([], { weekday: 'short' })} ${timeStr(ms)}`; };
 
