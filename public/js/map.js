@@ -30,7 +30,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
@@ -62,7 +62,7 @@ export const LAYER_GROUPS = [
   ['Snow & Ice', [['snowdepth', 'Snow Depth Now'], ['snowprob', 'Snow & Ice Chances', 'snowOpts'], ['snowcover', 'Snow & Sea Ice Cover']]],
   ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms']]],
   ['More', [
-    ['places', 'My Places'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
+    ['places', 'My Places'], ['outages', 'Power Outages (partial US)'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
   ]],
 ];
 
@@ -422,6 +422,34 @@ ADD.buoys = async () => {
       <div class="qp-row">Water ${wt != null ? fmtT(wt) : '--'} · ${Math.round((Date.now() - p.t) / 60e3)} min ago</div>
       <div class="qp-btns"><a class="btn small ghost" href="https://www.ndbc.noaa.gov/station_page.php?station=${esc(p.id)}" target="_blank" rel="noopener">NDBC page ↗</a><button class="btn small" id="bmar">Marine forecast</button></div></div>`);
     setTimeout(() => { const b = document.getElementById('bmar'); if (b) b.onclick = () => { closePopups(); H.onPick?.({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }, `Buoy ${p.id}`); }; }, 0);
+  });
+};
+
+// ================= Power outages: DOE ODIN, by county (participating utilities only) =================
+ADD.outages = async () => {
+  const sel = 'county,state,name,metersaffected,cause,estimatedrestorationtime,reportedstarttime,communitydescriptor,geom';
+  const j = await getData(`https://openenergyhub.ornl.gov/api/explore/v2.1/catalog/datasets/odin-real-time-outages-county/exports/geojson?select=${encodeURIComponent(sel)}`, { cache: 300e3, timeout: 30000 });
+  // one feature per county with every utility's count added up
+  const by = {};
+  for (const f of j.features || []) {
+    const p = f.properties, k = p.communitydescriptor || `${p.county}-${p.state}`;
+    if (!f.geometry) continue;
+    const e = by[k] ||= { type: 'Feature', geometry: f.geometry, properties: { county: p.county, state: p.state, out: 0, list: [] } };
+    const n = +p.metersaffected || 0; e.properties.out += n;
+    let ert = ''; try { ert = p.estimatedrestorationtime ? JSON.parse(p.estimatedrestorationtime).ert || '' : ''; } catch { /* plain */ }
+    e.properties.list.push({ u: String(p.name || '').replace(/,\d+$/, ''), n, cause: p.cause || '', ert, start: p.reportedstarttime || '' });
+  }
+  const feats = Object.values(by).map((f) => ({ ...f, properties: { ...f.properties, list: JSON.stringify(f.properties.list) } }));
+  if (!feats.length) toast('No outages reported by participating utilities right now');
+  return geo('outages', { type: 'FeatureCollection', features: feats }, [
+    { type: 'fill', paint: { 'fill-color': ['step', ['get', 'out'], '#fde68a', 50, '#fbbf24', 250, '#f97316', 1000, '#dc2626', 5000, '#7f1d1d'], 'fill-opacity': 0.55 } },
+    { type: 'line', paint: { 'line-color': '#92400e', 'line-width': 0.8 } },
+  ], (f, ll) => {
+    const p = f.properties, list = JSON.parse(p.list || '[]').sort((a, b) => b.n - a.n);
+    const t = (s) => (s ? new Date(s).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '');
+    popup(ll, `<div class="qp"><div class="qp-name">${esc(p.county)} County, ${esc(p.state)}</div><div class="qp-row"><b>${(+p.out).toLocaleString()}</b> customers without power</div>
+      ${list.slice(0, 6).map((x) => `<div class="qp-row small">${esc(x.u)}: ${x.n.toLocaleString()}${x.cause && !/unknown/i.test(x.cause) ? ` · ${esc(x.cause)}` : ''}${x.ert ? ` · back by ${t(x.ert)}` : ''}</div>`).join('')}
+      <div class="muted small">DOE ODIN · participating utilities only</div></div>`);
   });
 };
 
