@@ -97,6 +97,7 @@ export const WIDGETS = {
   nws_haz: IMG('NWS Hazards Map', 'Severe Weather', 'https://forecast.weather.gov/wwamap/png/US.png', 'https://www.weather.gov/', 10),
   meso_scp: MESO('scp', 'Supercell Composite'), meso_stp: MESO('stpc', 'Significant Tornado'), meso_cape: MESO('sbcp', 'Surface CAPE'), meso_shr: MESO('shr6', 'Deep Layer Shear'),
   hailhist: { title: 'Hail History Here', cat: 'Severe Weather', size: 'l', kind: 'local' },
+  marine: { title: 'Marine & Offshore (Pro)', cat: 'Marine & Space', size: 'xl', kind: 'local' },
   // ---- more satellite ----
   goes_ir: IMG('US Infrared', 'Radar & Satellite', `${NESDIS}/CONUS/13/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
   goes_vis: IMG('US Visible', 'Radar & Satellite', `${NESDIS}/CONUS/02/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
@@ -212,7 +213,7 @@ export const TEMPLATES = {
   sat: { name: 'Satellite & Radar', w: [['goes_conus_loop', 'l'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_ir', 'm'], ['goes_wv_loop', 'm'], ['goes_vis', 'm'], ['goes_air', 'm'], ['goes_sand', 'm'], ['goes_glm', 'm'], ['goes_fire', 'm'], ['sec_ne', 'm'], ['sec_sp', 'm'], ['sec_cgl', 'm'], ['sec_psw', 'm'], ['rl_ne', 'm'], ['rl_sp', 'm'], ['rl_psw', 'm'], ['radar_se', 'm']] },
   winter: { name: 'Winter Weather', w: [['alerts', 'm'], ['w_snow1', 'm'], ['w_snow2', 'm'], ['w_snow3', 'm'], ['w_snow8', 'm'], ['w_ice1', 'm'], ['w_snowamt', 'l'], ['w_iceamt', 'l'], ['w_feels', 'm'], ['wpc_sfc', 'm'], ['ncfc1', 'm'], ['cpc_610t', 'm'], ['cpc_814t', 'm']] },
   promaps: { name: 'Pro Analysis', w: [['p_tafb_usa', 'l'], ['p_sfc24', 'm'], ['p_sfc48', 'm'], ['p_sfc72', 'm'], ['p_sht', 'm'], ['p_steer2', 'm'], ['p_vor500', 'm'], ['p_ohc', 'm'], ['p_sstaw', 'm'], ['p_ssta7', 'm'], ['p_ascat', 'l'], ['p_tawsandl', 'l'], ['p_glmtawl', 'm'], ['p_mjo', 'm'], ['p_gth', 'm'], ['p_allf', 'l'], ['p_haz37', 'm'], ['p_medr', 'm']] },
-  space: { name: 'Space & Marine', w: [['aurora_n', 'm'], ['aurora_tn', 'm'], ['kp', 'm'], ['swx', 'l'], ['sun', 'm'], ['opc_atl', 'l'], ['opc_pac', 'l'], ['marine_links', 'm']] },
+  space: { name: 'Space & Marine', w: [['marine', 'xl'], ['aurora_n', 'm'], ['aurora_tn', 'm'], ['kp', 'm'], ['swx', 'l'], ['sun', 'm'], ['opc_atl', 'l'], ['opc_pac', 'l'], ['marine_links', 'm']] },
 };
 const fromTpl = (k) => TEMPLATES[k].w.map(([type, size]) => ({ id: uid(), type, size }));
 // Northern locations (about Virginia and north) get a winter row in the default layout
@@ -302,6 +303,7 @@ function render() {
   dopTimers.forEach(clearInterval); dopTimers = [];
   layout.forEach((w) => { if (w.type === 'minimap') mountMiniMap(w); if (w.type === 'doppler' && has('pro')) mountDoppler(w); });
   fillSiteSelects();
+  $$('[data-marine]').forEach((el) => window.dispatchEvent(new CustomEvent('marine-card', { detail: el })));
   $$('[data-hh]').forEach((el) => window.dispatchEvent(new CustomEvent('hail-history', { detail: el })));
   wireAlerts($('#dashGrid'));
 }
@@ -336,6 +338,7 @@ function bodyHTML(w, def) {
   if (w.type === 'doppler') return has('pro') ? `<div class="site-ctl"><select data-dsite="${w.id}"><option>Loading radar sites…</option></select><div class="seg small"><button data-dprod="N0B" data-w="${w.id}" class="${(w.params?.prod || 'N0B') === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-dprod="N0S" data-w="${w.id}" class="${w.params?.prod === 'N0S' ? 'on' : ''}">Velocity</button></div></div><div class="dop-map" data-dop="${w.id}"></div><div class="dop-bar"><button class="w-btn" data-dplay="${w.id}">❚❚</button><span class="dop-time" data-dtime="${w.id}">Loading scans…</span><button class="w-btn" data-dreset="${w.id}" title="Back to the default view">Reset view</button><span class="muted small">Click the map, then scroll to zoom · tap a radar dot to switch</span></div>` : `<div class="locked-card"><p>Your own Doppler radar: pick any of the 159 NEXRAD sites and loop its reflectivity or storm-relative velocity on a live map. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'site_loop') return has('pro') ? siteLoopHTML(w) : `<div class="locked-card"><p>Pick any of the 159 NEXRAD radars and watch its reflectivity or velocity loop. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
+  if (w.type === 'marine') return '<div data-marine></div>';
   if (!M) return '<div class="empty">Loading…</div>';
   switch (w.type) {
     case 'now': return F.heroHTML(M, loc);
@@ -530,7 +533,7 @@ function openCatalog() {
   for (const [id, d] of Object.entries(WIDGETS)) (cats[d.cat] ||= []).push([id, d]);
   const used = new Set(layout.map((w) => w.type));
   const html = `<div class="catalog">${Object.entries(cats).map(([c, list]) => `<h4>${esc(c)}</h4><div class="cat-grid">${list.map(([id, d]) => `
-    <button class="cat-item${used.has(id) && d.kind !== 'custom' ? ' used' : ''}" data-add="${id}"><b>${esc(d.title)}${d.pro || id === 'doppler' || id === 'site_loop' ? ' <span class="tier-badge t-pro">PRO</span>' : ''}</b><span>${used.has(id) && d.kind !== 'custom' ? 'On dashboard · add another' : 'Add'}</span></button>`).join('')}</div>`).join('')}
+    <button class="cat-item${used.has(id) && d.kind !== 'custom' ? ' used' : ''}" data-add="${id}"><b>${esc(d.title)}${d.pro || id === 'doppler' || id === 'site_loop' || id === 'marine' ? ' <span class="tier-badge t-pro">PRO</span>' : ''}</b><span>${used.has(id) && d.kind !== 'custom' ? 'On dashboard · add another' : 'Add'}</span></button>`).join('')}</div>`).join('')}
     <div id="customForm" hidden class="custom-form"><h4>Custom widget</h4>
       <label>Title<input id="cfTitle" placeholder="e.g. Euro ensemble"></label>
       <label id="cfSrcL">Image or GIF address<input id="cfSrc" placeholder="https://…/image.png"></label>
@@ -539,7 +542,7 @@ function openCatalog() {
   window.dispatchEvent(new CustomEvent('modal', { detail: { title: 'Add a widget', html } }));
   $$('[data-add]').forEach((b) => b.onclick = () => {
     const type = b.dataset.add, d = WIDGETS[type];
-    if ((d.pro || type === 'doppler' || type === 'site_loop') && !has('pro')) { window.dispatchEvent(new CustomEvent('modal-close')); openPricing(`${d.title.replace(' (Pro)', '')} is part of Updraft Pro.`); return; }
+    if ((d.pro || type === 'doppler' || type === 'site_loop' || type === 'marine') && !has('pro')) { window.dispatchEvent(new CustomEvent('modal-close')); openPricing(`${d.title.replace(' (Pro)', '')} is part of Updraft Pro.`); return; }
     if (d.kind === 'custom') {
       $('#customForm').hidden = false; $('#cfSrcL').hidden = type === 'custom_link'; $('#customForm').scrollIntoView({ behavior: 'smooth' });
       $('#cfSave').onclick = () => {

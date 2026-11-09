@@ -18,6 +18,7 @@ const ALLOWED = new Set([
   'tiles.openfreemap.org',
   'router.project-osrm.org',
   'developer.nlr.gov',
+  'www.ndbc.noaa.gov',
 ]);
 
 export async function onRequestGet({ request }) {

@@ -600,3 +600,22 @@ body.popup-open .crosshair { opacity: 0; }
 .dop-map .leaflet-control-zoom a { width: 34px; height: 34px; line-height: 34px; font-size: 20px; background: var(--card); color: var(--text); border-color: var(--line); }
 .dop-map.zooming { outline: 2px solid var(--brand); outline-offset: -2px; }
 .dop-bar .w-btn { width: auto; padding: 0 10px; }
+/* marine */
+.wave-dir { font-style: normal; display: inline-block; margin-left: 2px; font-size: 11px; }
+.mar-note { padding: 8px 12px; border-radius: 10px; background: rgba(234,179,8,.14); font-size: 13px; margin-bottom: 10px; }
+.mar-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+.mar-grid h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.mar-now { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 6px; }
+.mar-tile { background: var(--card2); border-radius: 12px; padding: 10px; display: grid; gap: 1px; }
+.mar-tile small { color: var(--muted); font-size: 11.5px; } .mar-tile b { font-size: 19px; } .mar-tile span { font-size: 12px; color: var(--muted); }
+.mar-days { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 6px; }
+.mar-days th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; } .mar-days td, .mar-days th { padding: 5px 4px; border-top: 1px solid var(--line); }
+.mar-days small { color: var(--muted); }
+.mar-arr { font-style: normal; display: inline-block; color: var(--accent); }
+.mar-chart { width: 100%; height: 120px; display: block; } .mar-chart.tide { height: 90px; }
+.mar-chart .grid { stroke: var(--line); } .mar-chart .axis { fill: var(--muted); font-size: 10px; }
+.mar-tides { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 6px 0; }
+.mar-tides div { background: var(--card2); border-radius: 10px; padding: 7px 9px; display: grid; font-size: 12.5px; border-left: 3px solid #22d3ee; }
+.mar-tides div.lo { border-left-color: #64748b; } .mar-tides small { color: var(--muted); }
+.mar-zone p { margin: 6px 0; font-size: 13.5px; line-height: 1.45; }
+@media (max-width: 900px) { .mar-grid { grid-template-columns: 1fr; } .mar-now, .mar-tides { grid-template-columns: repeat(2, 1fr); } }

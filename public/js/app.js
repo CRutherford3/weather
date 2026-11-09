@@ -6,6 +6,7 @@ import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
 import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge } from './plan.js';
 import { initRoute, openRoute } from './route.js';
+import { loadMarine, marineHTML } from './marine.js';
 import { getData } from './util.js';
 
 const state = {
@@ -77,7 +78,7 @@ function setLocation(loc, { fly = true, auto = false } = {}) {
 // Clear the old place right away so the Forecast tab never shows the previous location
 function showLoading(loc) {
   const msg = `<div class="empty">Loading ${esc(loc.name)}…</div>`;
-  ['#fcHero', '#fcNowcast', '#fcDetails', '#fcHourly', '#fcDaily', '#fcAqi', '#fcSun', '#fcNws', '#fcModels', '#fcAfd', '#fcHail'].forEach((id) => { const el = $(id); if (el) el.innerHTML = msg; });
+  ['#fcHero', '#fcNowcast', '#fcDetails', '#fcHourly', '#fcDaily', '#fcAqi', '#fcSun', '#fcNws', '#fcModels', '#fcAfd', '#fcHail', '#fcMarine'].forEach((id) => { const el = $(id); if (el) el.innerHTML = msg; });
   $('#fcAlerts').innerHTML = ''; $('#alertBanner').hidden = true;
   updateDashboard({ M: null, loc, models: null, afd: undefined });
 }
@@ -185,10 +186,30 @@ async function loadExtras() {
   if (!state.loc || !state.M) return;
   const loc = state.loc, same = () => state.loc === loc;
   if (!state.models) { state.models = []; loadModels(loc).then((m) => { if (!same()) return; state.models = m; $('#fcModels').innerHTML = F.modelsHTML(m); updateDashboard({ models: m }); }).catch(() => { $('#fcModels').innerHTML = '<div class="empty">Model data unavailable right now.</div>'; }); }
-  hailHistory($('#fcHail'));
+  hailHistory($('#fcHail')); marineCard($('#fcMarine'));
   if (state.afd === undefined && state.M.nws?.office) { state.afd = null; loadDiscussion(state.M.nws.office).then((a) => { if (!same()) return; state.afd = a; $('#fcAfd').innerHTML = F.afdHTML(a); updateDashboard({ afd: a }); }).catch(() => { $('#fcAfd').innerHTML = F.afdHTML(null); updateDashboard({ afd: null }); }); }
   else if (!state.M.nws) { $('#fcAfd').innerHTML = F.afdHTML(null); updateDashboard({ afd: null }); }
 }
+
+// ---------- marine & offshore (Pro) ----------
+const marineCache = {};
+async function marineCard(el) {
+  if (!el || !state.loc) return;
+  const loc = state.loc;
+  if (!can('marine')) {
+    el.innerHTML = `<div class="locked-card"><p>Live buoy readings, a 7-day seas and swell forecast, tide times and the official NWS marine forecast for the coast nearest <b>${esc(loc.name)}</b>.</p><button class="btn" data-unlock>Unlock with Pro</button></div>`;
+    $('[data-unlock]', el).onclick = () => gate('marine', 'Marine & offshore');
+    return;
+  }
+  const key = `${loc.lat.toFixed(2)},${loc.lon.toFixed(2)}`;
+  if (!marineCache[key]) el.innerHTML = '<div class="empty">Finding the nearest buoy, tides and marine forecast…</div>';
+  try {
+    const Mr = await (marineCache[key] ||= loadMarine(loc).catch((e) => { delete marineCache[key]; throw e; }));
+    if (state.loc !== loc) return;
+    el.innerHTML = marineHTML(Mr);
+  } catch (e) { console.warn(e); el.innerHTML = '<div class="empty">Marine data is unavailable right now.</div>'; }
+}
+window.addEventListener('marine-card', (e) => marineCard(e.detail));
 
 // ---------- hail history (Pro) ----------
 const hailCache = {};
@@ -367,6 +388,7 @@ const ATTRIB = [
   ['OpenFreeMap / OpenMapTiles / OpenStreetMap contributors', 'Map styles and map data', 'https://openfreemap.org/'],
   ['Esri', 'Satellite basemap imagery', 'https://www.esri.com/'],
   ['OSRM / OpenStreetMap', 'Driving routes', 'https://project-osrm.org/'],
+  ['NOAA NDBC, CO-OPS and Open-Meteo Marine', 'Buoys, tides, waves and swell', 'https://www.ndbc.noaa.gov/'],
   ['U.S. DOE Alternative Fuels Data Center', 'EV charging stations', 'https://afdc.energy.gov/'],
   ['TomTom', 'Traffic', 'https://developer.tomtom.com/'],
   ['NOAA SWPC, OPC, CIMSS, Tropical Tidbits', 'Space weather, marine, tropical analysis and spaghetti plots', 'https://www.swpc.noaa.gov/'],
@@ -437,7 +459,7 @@ async function boot() {
   ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#fcAd4').innerHTML = adSlot('tall');
   $('#radarAd').innerHTML = adSlot('box');
   fillAds(document);
-  window.addEventListener('plan', () => { ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#fcAd4').innerHTML = adSlot('tall'); $('#radarAd').innerHTML = adSlot('box'); fillAds(document); Map.applyLayers(); if (state.M) hailHistory($('#fcHail')); });
+  window.addEventListener('plan', () => { ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#fcAd4').innerHTML = adSlot('tall'); $('#radarAd').innerHTML = adSlot('box'); fillAds(document); Map.applyLayers(); if (state.M) { hailHistory($('#fcHail')); marineCard($('#fcMarine')); } });
   route();
   if (state.loc) { $('#locName').textContent = state.loc.name; updateFavBtn(); refresh(); }
   else { setLocation(DEFAULT_LOC, { fly: false, auto: true }); geolocate(true); }

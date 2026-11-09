@@ -5,6 +5,7 @@ import { alertColor, DBZ_LEGEND } from './config.js';
 import { store, getData, $, $$, esc, U, fmtT, fmtW, compass, toast, tempColor, wx, icon, localTime, aqiInfo, openSheet, closeSheet } from './util.js';
 import { feeds, gridPoints, quickPoint, aqGrid, radarSites, nearestSite, siteScans } from './api.js';
 import { KEYS } from './config.js';
+import { buoys as buoyList, buoyNames } from './marine.js';
 import { canLayer, tierOf, badge, gate } from './plan.js';
 
 const ml = window.maplibregl;
@@ -29,7 +30,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, buoys: false, waves: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
@@ -56,6 +57,7 @@ export const LAYER_GROUPS = [
     ['fronts', 'Fronts & Pressure'], ['winds', 'Winds (animated)'], ['temps', 'Temperatures'], ['aqi', 'Air Quality'],
   ]],
   ['Tropics', [['tropics', 'Hurricane Tracker']]],
+  ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast']]],
   ['More', [
     ['places', 'My Places'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
   ]],
@@ -368,6 +370,27 @@ ADD.sites = async () => {
   });
 };
 
+// ================= Buoys: live wave height and wind from every NDBC station =================
+ADD.buoys = async () => {
+  const [list, names] = await Promise.all([buoyList(), buoyNames()]);
+  const ftLbl = (m) => (m == null ? '' : `${(m * 3.28084).toFixed(0)}'`);
+  const col = (m) => (m == null ? '#64748b' : m < 0.6 ? '#22c55e' : m < 1.2 ? '#84cc16' : m < 2 ? '#eab308' : m < 3 ? '#f97316' : '#ef4444');
+  const fc = { type: 'FeatureCollection', features: list.filter((b) => Date.now() - b.t < 6 * 36e5).map((b) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [b.lon, b.lat] }, properties: { ...b, name: names[b.id] || '', lbl: ftLbl(b.wvht), c: col(b.wvht) } })) };
+  return geo('buoys', fc, [
+    { type: 'circle', top: true, paint: { 'circle-radius': ['case', ['has', 'wvht'], 6, 4], 'circle-color': ['get', 'c'], 'circle-stroke-color': '#0b1020', 'circle-stroke-width': 1.5 } },
+    { type: 'symbol', top: true, minzoom: 4.5, layout: { 'text-field': ['get', 'lbl'], 'text-size': 11, 'text-offset': [0, 1.2], 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#e0f2fe', 'text-halo-color': '#0b1020', 'text-halo-width': 1.5 } },
+  ], (f, ll) => {
+    const p = f.properties, n = (v) => (v === 'null' || v == null ? null : +v);
+    const wv = n(p.wvht), ws = n(p.wspd), gs = n(p.gst), wt = n(p.wtmp), dp = n(p.dpd);
+    popup(f.geometry.coordinates, `<div class="qp"><div class="qp-name">Buoy ${esc(p.id)}${p.name ? ` · ${esc(p.name)}` : ''}</div>
+      <div class="qp-row">Waves <b>${wv != null ? (wv * 3.28084).toFixed(1) + ' ft' : '--'}</b>${dp ? ` at ${dp}s` : ''}${n(p.mwd) != null ? ` from ${compass(n(p.mwd))}` : ''}</div>
+      <div class="qp-row">Wind ${n(p.wdir) != null ? compass(n(p.wdir)) : ''} ${ws != null ? Math.round(ws * 1.94384) + ' kn' : '--'}${gs != null ? `, gusts ${Math.round(gs * 1.94384)} kn` : ''}</div>
+      <div class="qp-row">Water ${wt != null ? fmtT(wt) : '--'} · ${Math.round((Date.now() - p.t) / 60e3)} min ago</div>
+      <div class="qp-btns"><a class="btn small ghost" href="https://www.ndbc.noaa.gov/station_page.php?station=${esc(p.id)}" target="_blank" rel="noopener">NDBC page ↗</a><button class="btn small" id="bmar">Marine forecast</button></div></div>`);
+    setTimeout(() => { const b = document.getElementById('bmar'); if (b) b.onclick = () => { closePopups(); H.onPick?.({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }, `Buoy ${p.id}`); }; }, 0);
+  });
+};
+
 // ================= Hail map: storm reports sized by stone size + SPC hail risk =================
 const hailColor = (inch) => (inch >= 2.75 ? '#d946ef' : inch >= 2 ? '#ef4444' : inch >= 1.5 ? '#f97316' : inch >= 1 ? '#facc15' : '#a3e635');
 ADD.hail = async () => {
@@ -475,6 +498,15 @@ ADD.fronts = async () => {
 ADD.temps = async () => gridLayer('temps', async (g) => (await gridPoints(g.lats, g.lons)).map((p) => p.current && ({
   html: `<div style="background:${tempColor(p.current.temperature_2m)}"><b>${Math.round(U.temp(p.current.temperature_2m))}°</b></div>`,
 })));
+// Wave height grid over the ocean in view (land points come back empty and are skipped)
+ADD.waves = async () => gridLayer('waves', async (g) => {
+  let j = await getData(`https://marine-api.open-meteo.com/v1/marine?latitude=${g.lats.join(',')}&longitude=${g.lons.join(',')}&current=wave_height,wave_direction,wave_period`, { cache: 900e3 });
+  if (!Array.isArray(j)) j = [j];
+  const col = (m) => (m < 0.6 ? '#22c55e' : m < 1.2 ? '#84cc16' : m < 2 ? '#eab308' : m < 3 ? '#f97316' : '#ef4444');
+  const imperial = U.temp(10) > 30;
+  return j.map((p) => { const c = p?.current; if (!c || c.wave_height == null) return null;
+    return { html: `<div style="background:${col(c.wave_height)}"><b>${imperial ? Math.round(c.wave_height * 3.28084) + "'" : c.wave_height.toFixed(1) + 'm'}</b><i class="wave-dir" style="transform:rotate(${(c.wave_direction + 180) % 360}deg)">↑</i></div>` }; });
+});
 ADD.aqi = async () => gridLayer('aqi', async (g) => (await aqGrid(g.lats, g.lons)).map((p) => p.current?.us_aqi != null && ({
   html: `<div style="background:${aqiInfo(p.current.us_aqi).color}"><b>${Math.round(p.current.us_aqi)}</b><small>AQI</small></div>`,
 })));
@@ -722,4 +754,4 @@ function openLayersSheet() {
 }
 
 // Units changed: redraw layers that print numbers
-export function refreshUnits() { for (const id of ['temps']) if (active[id]) refresh(id); }
+export function refreshUnits() { for (const id of ['temps', 'waves']) if (active[id]) refresh(id); }

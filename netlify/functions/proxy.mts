@@ -20,6 +20,7 @@ const ALLOWED = new Set([
   "tiles.openfreemap.org",
   "router.project-osrm.org",
   "developer.nlr.gov",
+  "www.ndbc.noaa.gov",
 ]);
 
 export default async (req: Request) => {
