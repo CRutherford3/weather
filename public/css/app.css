@@ -567,3 +567,12 @@ table.scale { width: 100%; border-collapse: collapse; font-size: 12.5px; } .scal
 .wx-card { transition: opacity .2s; } .wx-card.busy { opacity: .72; }
 .wx-xh { vertical-align: -1px; margin-right: 6px; color: var(--accent); }
 .wx-card #wxHome { color: var(--accent); }
+/* tall ad under Sun & Moon, model toggles */
+.stack .ad-tall { width: 100%; min-height: 600px; }
+@media (max-width: 1180px) { .stack .ad-tall { min-height: 250px; } }
+.model-legend { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.mtg { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--card2); color: var(--text); border-radius: 99px; padding: 5px 11px; font-size: 13.5px; transition: opacity .15s; }
+.mtg i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.mtg:hover { border-color: var(--accent); }
+.mtg.off { opacity: .4; } .mtg.off i { background: transparent !important; outline: 1.5px solid var(--muted); }
+.mtg.reset { border-style: dashed; color: var(--accent); }

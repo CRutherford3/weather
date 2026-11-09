@@ -429,10 +429,10 @@ async function boot() {
   wireTools();
   initRoute(() => state.loc);
   initDashboard();
-  ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); });
+  ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#fcAd4').innerHTML = adSlot('tall');
   $('#radarAd').innerHTML = adSlot('box');
   fillAds(document);
-  window.addEventListener('plan', () => { ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#radarAd').innerHTML = adSlot('box'); fillAds(document); Map.applyLayers(); if (state.M) hailHistory($('#fcHail')); });
+  window.addEventListener('plan', () => { ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#fcAd4').innerHTML = adSlot('tall'); $('#radarAd').innerHTML = adSlot('box'); fillAds(document); Map.applyLayers(); if (state.M) hailHistory($('#fcHail')); });
   route();
   if (state.loc) { $('#locName').textContent = state.loc.name; updateFavBtn(); refresh(); }
   else { setLocation(DEFAULT_LOC, { fly: false, auto: true }); geolocate(true); }

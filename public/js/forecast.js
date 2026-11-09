@@ -197,20 +197,41 @@ export function nwsTextHTML(M) {
   return `<div class="nws-text">${ps.slice(0, 14).map((p) => `<div class="nws-p"><b>${esc(p.name)}</b><span>${p.temperature}°F</span><p>${esc(p.detailedForecast)}</p></div>`).join('')}</div>`;
 }
 
+// Click a model in the legend to show or hide its line. Choice is remembered.
+let lastModels = null;
+const offSet = () => new Set(JSON.parse(localStorage.getItem('wx_modelsOff') || '[]'));
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.model-legend [data-model]'); if (!b || !lastModels) return;
+  const off = offSet(), k = b.dataset.model;
+  if (b.dataset.only) { lastModels.forEach((m) => off.add(m.name)); off.delete(k); }
+  else if (off.has(k)) off.delete(k); else off.add(k);
+  if (off.size >= lastModels.length) off.delete(k); // keep at least one line
+  localStorage.setItem('wx_modelsOff', JSON.stringify([...off]));
+  document.querySelectorAll('.model-wrap').forEach((w) => { w.outerHTML = modelsHTML(lastModels); });
+});
+document.addEventListener('dblclick', (e) => { // double-click: show only that model
+  const b = e.target.closest('.model-legend [data-model]'); if (!b || !lastModels) return;
+  localStorage.setItem('wx_modelsOff', JSON.stringify(lastModels.map((m) => m.name).filter((n) => n !== b.dataset.model)));
+  document.querySelectorAll('.model-wrap').forEach((w) => { w.outerHTML = modelsHTML(lastModels); });
+});
 export function modelsHTML(models) {
   if (!models?.length) return '<div class="empty">Model data unavailable.</div>';
+  lastModels = models;
+  const off = offSet();
+  const shown = models.filter((m) => !off.has(m.name));
   const times = models[0].data.time, step = 3, W = 900, H = 260, pad = 36;
   const idx = times.map((_, i) => i).filter((i) => i % step === 0);
-  const all = models.flatMap((m) => idx.map((i) => m.data.temperature_2m[i]).filter((v) => v != null).map(U.temp));
+  const all = (shown.length ? shown : models).flatMap((m) => idx.map((i) => m.data.temperature_2m[i]).filter((v) => v != null).map(U.temp));
   const lo = Math.floor(Math.min(...all)), hi = Math.ceil(Math.max(...all));
   const X = (k) => pad + k / (idx.length - 1) * (W - pad - 10), Y = (v) => 14 + (1 - (v - lo) / Math.max(1, hi - lo)) * (H - 50);
   const days = idx.map((i, k) => (times[i].slice(11, 13) === '00' ? `<line x1="${X(k)}" x2="${X(k)}" y1="10" y2="${H - 30}" class="grid"/><text x="${X(k) + 4}" y="${H - 12}" class="axis">${dayName(times[i])}</text>` : '')).join('');
   const ticks = [lo, Math.round((lo + hi) / 2), hi].map((v) => `<text x="4" y="${Y(v) + 4}" class="axis">${v}°</text><line x1="${pad}" x2="${W - 10}" y1="${Y(v)}" y2="${Y(v)}" class="grid"/>`).join('');
-  const lines = models.map((m) => { const p = idx.map((i, k) => (m.data.temperature_2m[i] == null ? null : `${X(k).toFixed(1)},${Y(U.temp(m.data.temperature_2m[i])).toFixed(1)}`)).filter(Boolean).join(' '); return `<polyline points="${p}" fill="none" stroke="${m.color}" stroke-width="2.2" stroke-linejoin="round"/>`; }).join('');
-  const totals = models.map((m) => { const s = m.data.precipitation.reduce((a, b) => a + (b || 0), 0); return `<span><i style="background:${m.color}"></i>${esc(m.name)} <b>${fmtP(s)}</b></span>`; }).join('');
-  return `<svg class="model-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${ticks}${days}${lines}</svg>
-    <div class="model-legend">${totals}</div><div class="muted small">Lines show temperature from each model. Numbers are total rain each model expects over 7 days. When lines spread apart, forecast confidence is lower.</div>`;
+  const lines = shown.map((m) => { const p = idx.map((i, k) => (m.data.temperature_2m[i] == null ? null : `${X(k).toFixed(1)},${Y(U.temp(m.data.temperature_2m[i])).toFixed(1)}`)).filter(Boolean).join(' '); return `<polyline points="${p}" fill="none" stroke="${m.color}" stroke-width="${shown.length === 1 ? 3 : 2.2}" stroke-linejoin="round"/>`; }).join('');
+  const totals = models.map((m) => { const s = m.data.precipitation.reduce((a, b) => a + (b || 0), 0); return `<button class="mtg${off.has(m.name) ? ' off' : ''}" data-model="${esc(m.name)}" title="Click to show or hide. Double-click to show only this one."><i style="background:${m.color}"></i>${esc(m.name)} <b>${fmtP(s)}</b></button>`; }).join('');
+  return `<div class="model-wrap"><svg class="model-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${ticks}${days}${lines}</svg>
+    <div class="model-legend">${totals}${off.size ? '<button class="mtg reset" data-model-all>Show all</button>' : ''}</div><div class="muted small">Click a model to show or hide it, double-click to see just that one. Numbers are total rain each model expects over 7 days. When lines spread apart, forecast confidence is lower.</div></div>`;
 }
+document.addEventListener('click', (e) => { if (!e.target.closest('[data-model-all]') || !lastModels) return; localStorage.removeItem('wx_modelsOff'); document.querySelectorAll('.model-wrap').forEach((w) => { w.outerHTML = modelsHTML(lastModels); }); });
 
 export function afdHTML(afd) {
   if (!afd) return '<div class="empty">Forecast discussion unavailable (US only).</div>';
