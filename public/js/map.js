@@ -412,7 +412,7 @@ ADD.snowprob = async () => {
 };
 // IMS snow & ice (values 3 = sea ice, 4 = snow); everything else made transparent
 const IMS_RULE = encodeURIComponent(JSON.stringify({ rasterFunction: 'Colormap', rasterFunctionArguments: { Colormap: [[0, 0, 0, 0], [1, 0, 0, 0], [2, 0, 0, 0], [3, 150, 205, 255], [4, 255, 255, 255]] }, variableName: 'Raster' }));
-ADD.snowcover = async () => raster('snowcover', viaProxy(`${agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true)}&noData=0,1,2&noDataInterpretation=esriNoDataMatchAny&renderingRule=${decodeURIComponent(IMS_RULE)}${bustQ(360)}`), { opacity: 0.6, maxzoom: 9, before: firstRadarOr() });
+ADD.snowcover = async () => raster('snowcover', viaProxy(`${agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true)}&noData=0,1,2&noDataInterpretation=esriNoDataMatchAny&renderingRule=${IMS_RULE}${bustQ(360)}`), { opacity: 0.6, maxzoom: 9, before: firstRadarOr() });
 
 // ================= More marine layers =================
 // Sea surface temperature, NASA GIBS (MUR blend, yesterday's analysis)
