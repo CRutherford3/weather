@@ -584,3 +584,7 @@ table.scale { width: 100%; border-collapse: collapse; font-size: 12.5px; } .scal
 .seg.small button { padding: 5px 9px; font-size: 12.5px; }
 .legend-bar.vel { background: linear-gradient(90deg, #00e000, #007a00, #555, #7a0000, #ff3030) !important; }
 .opt-thumb.site { background: radial-gradient(circle at 50% 50%, #8b5cf6 0 18%, transparent 19%), conic-gradient(from 0deg, #22c55e33, #22c55e 30deg, transparent 31deg), #0b1020; }
+/* crosshair steps aside while a popup is open */
+body.popup-open .crosshair { opacity: 0; }
+.crosshair { transition: opacity .15s; }
+.maplibregl-popup { z-index: 30; }

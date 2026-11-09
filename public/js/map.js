@@ -190,7 +190,14 @@ function pin(lngLat, html, cls, onTap) {
   if (onTap) el.addEventListener('click', (e) => { e.stopPropagation(); onTap(); });
   return new ml.Marker({ element: el }).setLngLat(lngLat).addTo(map);
 }
-function popup(lngLat, html) { closePopups(); return new ml.Popup({ maxWidth: '300px', className: 'wx-pop' }).setLngLat(lngLat).setHTML(html).addTo(map); }
+// Popups hide the crosshair so it never sits on top of the text
+function popup(lngLat, html) {
+  closePopups();
+  const p = new ml.Popup({ maxWidth: '300px', className: 'wx-pop' }).setLngLat(lngLat).setHTML(html);
+  p.on('open', () => document.body.classList.add('popup-open'));
+  p.on('close', () => { if (!document.querySelector('.maplibregl-popup')) document.body.classList.remove('popup-open'); });
+  return p.addTo(map);
+}
 function viewGrid(cols, rows) {
   const b = map.getBounds();
   let s = Math.max(-70, b.getSouth()), n = Math.min(72, b.getNorth()), w = b.getWest(), e = b.getEast();

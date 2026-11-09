@@ -13,7 +13,9 @@ export const LAYER_TIER = { winds: 'plus', temps: 'plus', aqi: 'plus', rain: 'pl
 export const FEATURE_TIER = { route: 'pro', ev: 'pro', hailHistory: 'pro', hurricanes: 'plus', proLayouts: 'pro', noAds: 'plus' };
 export const PAGE_LIMIT = { free: 1, plus: 5, pro: 99 };
 
-export const plan = () => (RANK[store.get('plan', 'free')] != null ? store.get('plan', 'free') : 'free');
+// Test site: pro.weather.dialcheck.io always runs as Pro
+const FORCED = /^pro\./.test(location.hostname) ? 'pro' : null;
+export const plan = () => FORCED ||  (RANK[store.get('plan', 'free')] != null ? store.get('plan', 'free') : 'free');
 export const has = (tier = 'free') => RANK[plan()] >= RANK[tier];
 export const canLayer = (id) => has(LAYER_TIER[id]);
 export const can = (f) => has(FEATURE_TIER[f]);
