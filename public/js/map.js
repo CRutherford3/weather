@@ -415,8 +415,8 @@ ADD.snowcover = async () => raster('snowcover', `${agsExport('raster/rest/servic
 // ================= More marine layers =================
 // Sea surface temperature, NASA GIBS (MUR blend, yesterday's analysis)
 ADD.sst = async () => {
-  const d = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-  return raster('sst', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GHRSST_L4_MUR_Sea_Surface_Temperature/default/${d}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`, { opacity: 0.75, maxzoom: 7, before: firstRadarOr() });
+  // 'default' = NASA's newest available day (the analysis runs about 2 days behind)
+  return raster('sst', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GHRSST_L4_MUR_Sea_Surface_Temperature/default/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png?_=${Math.floor(Date.now() / 216e5)}`, { opacity: 0.75, maxzoom: 7, before: firstRadarOr() });
 };
 // NOAA electronic nautical charts (depths, channels, buoys, hazards)
 ADD.charts = async () => raster('charts', 'https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image', { opacity: 1, maxzoom: 18, before: firstRadarOr() });
