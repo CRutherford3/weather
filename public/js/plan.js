@@ -6,7 +6,7 @@ import { ADS, CHECKOUT } from './config.js';
 export const TIERS = {
   free: { name: 'Free', price: '$0', blurb: 'Radar, forecasts and alerts, with ads', features: ['Live radar and satellite', 'Forecasts and NWS alerts', 'Fronts and NHC tropical outlooks', 'Storm reports and outlooks', 'Dashboard with 1 page'] },
   plus: { name: 'Plus', price: '$2.99', per: '/mo', blurb: 'No ads, every map layer', features: ['Everything in Free, no ads', 'Hurricane tracker with live cones, tracks and spaghetti plots', 'All map layers: winds, temps, lightning, rain totals, air quality, hail', 'Dashboard with 5 pages', 'Severe alerts for saved places (apps)'] },
-  pro: { name: 'Pro', price: '$9.99', per: '/mo', blurb: 'For storm chasers, drivers and pros', features: ['Everything in Plus', 'Route weather planner, including EV charging stops', 'Hail history at any address', 'Live US traffic layer', 'Unlimited dashboard pages and pro layouts', 'iPad and Mac pro workspace'] },
+  pro: { name: 'Pro', price: '$9.99', per: '/mo', blurb: 'For storm chasers, drivers and pros', features: ['Everything in Plus', 'Route weather planner, including EV charging stops', 'Hail history at any address', 'Live US traffic layer', 'Radar site loops on the dashboard: any NEXRAD radar, reflectivity or velocity', 'Unlimited dashboard pages and pro layouts', 'iPad and Mac pro workspace'] },
 };
 const RANK = { free: 0, plus: 1, pro: 2 };
 export const LAYER_TIER = { winds: 'plus', temps: 'plus', aqi: 'plus', rain: 'plus', lightning: 'plus', drought: 'plus', hail: 'plus', tropics: 'plus', traffic: 'pro' };

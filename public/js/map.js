@@ -32,7 +32,7 @@ export const STYLES = {
 const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
-  radarSrc: store.get('radarSrc', 'us'),
+  radarSrc: store.get('radarSrc', 'us') === 'site' ? 'us' : store.get('radarSrc', 'us'), // single-site radar now lives on the dashboard only
   opacity: store.get('opacity', 0.75),
   speed: store.get('speed', 450),
   sat: store.get('satType', 'ir'),
@@ -40,13 +40,13 @@ export const S = {
   hail: store.get('hailHours', '72'),
   site: store.get('radarSite', null),     // e.g. 'MLB' for KMLB
   siteProd: store.get('siteProd', 'N0B') === 'N0S' || store.get('siteProd', 'N0B') === 'N0U' ? 'N0S' : 'N0B', // N0B reflectivity, N0S storm-relative velocity
-  layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
+  layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {}), { sites: false }),
 };
 const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
 
 export const LAYER_GROUPS = [
   ['Radar & Satellite', [
-    ['radar', 'Radar', 'radarOpts'], ['sites', 'Radar Sites (pick one)'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
+    ['radar', 'Radar', 'radarOpts'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
@@ -654,31 +654,15 @@ function openSourceSheet() {
   openSheet('Radar', `<div class="opt-list">
     ${opt('us', 'Hi-Def Radar', 'US NEXRAD mosaic · sharpest detail · every 5 minutes')}
     ${opt('global', 'Global Radar', 'Worldwide coverage · lower resolution')}
-    ${opt('site', 'Single Radar Site', `${S.site ? `K${S.site} · ` : ''}one Doppler radar, full detail, reflectivity or velocity`)}
     ${opt('off', 'Radar Off', 'Hide the radar loop')}</div>
-    <div class="sheet-sub">Radar site</div>
-    <div class="set-pad site-pick"><select id="sitePick"><option>Loading radar sites…</option></select>
-      <div class="seg" id="siteProd"><button data-v="N0B" class="${S.siteProd === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-v="N0S" class="${S.siteProd === 'N0S' ? 'on' : ''}">Velocity</button></div>
-      <label class="lrow-inline"><input type="checkbox" id="showSites" ${S.layers.sites ? 'checked' : ''}> Show radar sites on the map (tap one to switch)</label></div>
     <div class="sheet-sub">Loop settings</div>
     <label class="slider">Opacity <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="${S.opacity}"></label>
     <label class="slider">Loop speed <input type="range" id="speed" min="150" max="1000" step="50" value="${1150 - S.speed}"></label>`, (b) => {
     $$('.opt-row', b).forEach((r) => r.onclick = () => {
       const v = r.dataset.v;
       if (v === 'off') S.layers.radar = false; else { S.layers.radar = true; if (S.radarSrc !== v) { S.radarSrc = v; disable('radar'); } }
-      if (v === 'site') S.layers.sites = true;
       applyLayers(); closeSheet();
     });
-    radarSites().then((list) => {
-      const c = map.getCenter(), near = nearestSite(list, c.lat, c.lng);
-      const d = (x) => Math.round(Math.hypot(x.lat - c.lat, (x.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) * 69);
-      const sorted = [...list].sort((a, b) => d(a) - d(b));
-      const sel = $('#sitePick', b); if (!sel) return;
-      sel.innerHTML = sorted.map((x) => `<option value="${x.code}" ${(S.site || near?.code) === x.code ? 'selected' : ''}>${x.id} · ${esc(x.name)} (${d(x)} mi)</option>`).join('');
-      sel.onchange = () => { useSite(sel.value); const r = list.find((x) => x.code === sel.value); if (r) map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), 7) }); };
-    }).catch(() => { const sel = $('#sitePick', b); if (sel) sel.innerHTML = '<option>Radar sites unavailable</option>'; });
-    $$('#siteProd button', b).forEach((x) => x.onclick = () => { $$('#siteProd button', b).forEach((y) => y.classList.toggle('on', y === x)); useSite(S.site || $('#sitePick', b).value, x.dataset.v); });
-    $('#showSites', b).onchange = (e) => toggleLayer('sites', e.target.checked);
     $('#opacity', b).oninput = (e) => { S.opacity = +e.target.value; showFrame(R.idx); save(); };
     $('#speed', b).oninput = (e) => { S.speed = 1150 - +e.target.value; save(); if (R.playing) play(); };
   });

@@ -28,7 +28,7 @@ export const WIDGETS = {
   details: { title: 'Conditions Detail', cat: 'Your Location', size: 'l', kind: 'local' },
   minimap: { title: 'Live Radar', cat: 'Your Location', size: 'l', kind: 'local' },
   nwsloop: { title: 'Local NWS Radar Loop', cat: 'Your Location', size: 'm', kind: 'local' },
-  site_loop: { title: 'Radar Site Loop (pick any)', cat: 'Radar Loops', size: 'm', kind: 'local' },
+  site_loop: { title: 'Radar Site Loop (Pro)', cat: 'Radar Loops', size: 'm', kind: 'local' },
   aqi: { title: 'Air Quality', cat: 'Your Location', size: 's', kind: 'local' },
   sun: { title: 'Sun & Moon', cat: 'Your Location', size: 's', kind: 'local' },
   nwstext: { title: 'NWS Forecast Text', cat: 'Your Location', size: 'l', kind: 'local' },
@@ -251,7 +251,7 @@ function bodyHTML(w, def) {
   if (w.type === 'models_links') return modelLinksHTML();
   if (w.type === 'scales') return scalesHTML();
   if (w.type === 'marine_links') return marineHTML();
-  if (w.type === 'site_loop') return siteLoopHTML(w);
+  if (w.type === 'site_loop') return has('pro') ? siteLoopHTML(w) : `<div class="locked-card"><p>Pick any of the 159 NEXRAD radars and watch its reflectivity or velocity loop. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
   if (!M) return '<div class="empty">Loading…</div>';
   switch (w.type) {
@@ -375,7 +375,7 @@ function onGridChange(e) {
 function onGridClick(e) {
   const sp = e.target.closest('[data-sprod]');
   if (sp) { const w = layout.find((x) => x.id === sp.dataset.w); if (w) { w.params = { ...(w.params || {}), prod: sp.dataset.sprod }; save(); render(); } return; }
-  if (e.target.closest('[data-unlock]')) { openPricing('The hurricane tracker is part of Updraft Plus.'); return; }
+  const un = e.target.closest('[data-unlock]'); if (un) { openPricing(un.dataset.unlock === 'site' ? 'Radar site loops are part of Updraft Pro.' : 'The hurricane tracker is part of Updraft Plus.'); return; }
   const b = e.target.closest('[data-act]'); const wEl = e.target.closest('.widget');
   if (b && wEl) {
     const w = layout.find((x) => x.id === wEl.dataset.id);
