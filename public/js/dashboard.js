@@ -18,6 +18,7 @@ const RIDGE = (k, t) => IMG(`${t} Radar Loop`, 'Radar Loops', `https://radar.wea
 
 // Image products (NOAA/NWS, public domain). refresh = minutes between reloads.
 const IMG = (title, cat, src, link, refresh = 15, note = '') => ({ title, cat, kind: 'image', src, link, refresh, note });
+const PIMG = (...a) => ({ ...IMG(...a), pro: true }); // Pro-only products (the spaghettimodels.com-style collection)
 export const WIDGETS = {
   // ---- local, live data ----
   now: { title: 'Current Conditions', cat: 'Your Location', size: 'm', kind: 'local' },
@@ -136,6 +137,66 @@ export const WIDGETS = {
   swx: IMG('Space Weather Overview', 'Marine & Space', 'https://services.swpc.noaa.gov/images/swx-overview-large.gif', 'https://www.swpc.noaa.gov/', 15),
   sun: IMG('The Sun Right Now (SDO)', 'Marine & Space', 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg', 'https://sdo.gsfc.nasa.gov/data/', 30),
   marine_links: { title: 'Buoys, Tides & Rivers', cat: 'Marine & Space', size: 'm', kind: 'local' },
+  // ---- winter (free, on by default for northern locations) ----
+  w_snow1: IMG('Chance of 4"+ Snow: Day 1', 'Winter Weather', `${WPC}/wwd/day1_psnow_gt_04_conus.gif`, `${WPC}/wwd/winter_wx.shtml`, 120),
+  w_snow2: IMG('Chance of 4"+ Snow: Day 2', 'Winter Weather', `${WPC}/wwd/day2_psnow_gt_04_conus.gif`, `${WPC}/wwd/winter_wx.shtml`, 120),
+  w_snow3: IMG('Chance of 4"+ Snow: Day 3', 'Winter Weather', `${WPC}/wwd/day3_psnow_gt_04_conus.gif`, `${WPC}/wwd/winter_wx.shtml`, 120),
+  w_snow8: IMG('Chance of 8"+ Snow: Day 1', 'Winter Weather', `${WPC}/wwd/day1_psnow_gt_08_conus.gif`, `${WPC}/wwd/winter_wx.shtml`, 120),
+  w_ice1: IMG('Chance of 1/4"+ Ice: Day 1', 'Winter Weather', `${WPC}/wwd/day1_pice_gt_25_conus.gif`, `${WPC}/wwd/winter_wx.shtml`, 120),
+  w_snowamt: IMG('NWS Snowfall Forecast', 'Winter Weather', 'https://graphical.weather.gov/images/conus/SnowAmt1_conus.png', 'https://graphical.weather.gov/sectors/conus.php', 120),
+  w_iceamt: IMG('NWS Ice Forecast', 'Winter Weather', 'https://graphical.weather.gov/images/conus/IceAccum1_conus.png', 'https://graphical.weather.gov/sectors/conus.php', 120),
+  w_feels: IMG('Feels-Like Temperature', 'Winter Weather', 'https://graphical.weather.gov/images/conus/ApparentT1_conus.png', 'https://graphical.weather.gov/sectors/conus.php', 120),
+  // ---- Pro: the full spaghettimodels.com-style collection (NOAA, NASA, CIMSS and other public sources) ----
+  p_sht: PIMG('Shear Tendency (CIMSS)', 'Pro: Tropical Analysis', `${CIMSS}/wg8sht.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  p_vor500: PIMG('500mb Vorticity (CIMSS)', 'Pro: Tropical Analysis', `${CIMSS}/wg8vor2.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  p_vor200: PIMG('200mb Vorticity (CIMSS)', 'Pro: Tropical Analysis', `${CIMSS}/wg8vor1.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  p_steer2: PIMG('Steering Layer 500-850mb (CIMSS)', 'Pro: Tropical Analysis', `${CIMSS}/wg8dlm5-1.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  p_saltc: PIMG('Saharan Dust True Color (CIMSS)', 'Pro: Tropical Analysis', 'https://tropic.ssec.wisc.edu/real-time/sal/truecol-8.jpg', 'https://tropic.ssec.wisc.edu/', 120),
+  p_vshd: PIMG('Vertical Shear, Caribbean (NOAA)', 'Pro: Tropical Analysis', 'https://www.ospo.noaa.gov/Visualization01/cData/Ocean/Tropical/TCFP/images/ts_al_car_VSHD.png', 'https://www.ospo.noaa.gov/Products/ocean/tropical/', 180),
+  p_cump24: PIMG('Tropical Rain, Next 24h (NOAA)', 'Pro: Tropical Analysis', 'https://www.ospo.noaa.gov/Visualization01/cData/Ocean/Tropical/TCFP/images/al_rCUMP_024.png', 'https://www.ospo.noaa.gov/Products/ocean/tropical/', 180),
+  p_cump48: PIMG('Tropical Rain, Next 48h (NOAA)', 'Pro: Tropical Analysis', 'https://www.ospo.noaa.gov/Visualization01/cData/Ocean/Tropical/TCFP/images/al_rCUMP_048.png', 'https://www.ospo.noaa.gov/Products/ocean/tropical/', 180),
+  p_rvshd: PIMG('Shear Forecast 24h (NOAA)', 'Pro: Tropical Analysis', 'https://www.ospo.noaa.gov/Visualization01/cData/Ocean/Tropical/TCFP/images/al_rVSHD_024.png', 'https://www.ospo.noaa.gov/Products/ocean/tropical/', 180),
+  p_rthdv: PIMG('Instability Forecast 24h (NOAA)', 'Pro: Tropical Analysis', 'https://www.ospo.noaa.gov/Visualization01/cData/Ocean/Tropical/TCFP/images/al_rTHDV_024.png', 'https://www.ospo.noaa.gov/Products/ocean/tropical/', 180),
+  p_gth: PIMG('Global Tropics Hazards (CPC)', 'Pro: Tropical Analysis', 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/ghaz/gth_full_TConly_ATL.png', 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/ghaz/', 720),
+  p_mjo: PIMG('MJO Forecast (CPC)', 'Pro: Tropical Analysis', 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/spatial_olrmap_CA_full.gif', 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/', 720),
+  p_fsutime: PIMG('Storm Timing Estimate (FSU)', 'Pro: Tropical Analysis', 'https://moe.met.fsu.edu/tcprob/usa.png', 'https://moe.met.fsu.edu/tcprob/', 180),
+  p_sstc: PIMG('Atlantic Sea Temps Contour (NOAA)', 'Pro: Ocean', 'https://www.ospo.noaa.gov/data/sst/contour/usatlant.fc.gif', 'https://www.ospo.noaa.gov/', 720),
+  p_ohc: PIMG('Hurricane Heat Potential (NOAA)', 'Pro: Ocean', 'https://www.ospo.noaa.gov/data/ocean/ohc/images/h20_naQG3_ddc.gif', 'https://www.ospo.noaa.gov/Products/ocean/tropical/', 720),
+  p_sstaw: PIMG('W. Atlantic Sea Temp Anomaly', 'Pro: Ocean', `${TT}/cdas-sflux_ssta_watl_1.png`, 'https://www.tropicaltidbits.com/analysis/ocean/', 360),
+  p_ssta7: PIMG('Sea Temp 7-Day Change', 'Pro: Ocean', `${TT}/cdas-sflux_ssta7diff_watl_1.png`, 'https://www.tropicaltidbits.com/analysis/ocean/', 360),
+  p_ascat: PIMG('Satellite Ocean Winds (ASCAT)', 'Pro: Ocean', 'https://manati.star.nesdis.noaa.gov/ascat_images/cur_25km_META/whole_as.png', 'https://manati.star.nesdis.noaa.gov/', 60),
+  p_ira1: PIMG('Ocean Wind Analysis (OPC)', 'Pro: Ocean', 'https://ocean.weather.gov/shtml/ira1.gif', 'https://ocean.weather.gov/', 180),
+  p_tafb_gulf: PIMG('Gulf Surface Analysis (NHC)', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/GULF_latest.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_tafb_car: PIMG('Caribbean Surface Analysis (NHC)', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/CAR_latest.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_tafb_usa: PIMG('Atlantic Surface Analysis (NHC)', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/USA_latest.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_tafb_watl: PIMG('Western Atlantic Analysis (NHC)', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/WATL_latest.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_atltrop: PIMG('Atlantic Tropics Analysis (OPC)', 'Pro: Surface Analysis', 'https://ocean.weather.gov/UA/Atl_Tropics.gif', 'https://ocean.weather.gov/', 180),
+  p_sfc24: PIMG('NHC Forecast Map: 24 Hours', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/atlsfc24_latestBW.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_sfc48: PIMG('NHC Forecast Map: 48 Hours', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/atlsfc48_latestBW.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_sfc72: PIMG('NHC Forecast Map: 72 Hours', 'Pro: Surface Analysis', 'https://www.nhc.noaa.gov/tafb_latest/atlsfc72_latestBW.gif', 'https://www.nhc.noaa.gov/marine/', 180),
+  p_tawsand: PIMG('Tropical Atlantic Storm Tops', 'Pro: Satellite', `${NESDIS}/SECTOR/taw/Sandwich/900x540.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=taw', 10),
+  p_tawsandl: PIMG('Tropical Atlantic Storm Tops Loop', 'Pro: Satellite', `${NESDIS}/SECTOR/taw/Sandwich/GOES19-TAW-Sandwich-900x540.gif`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=taw', 10),
+  p_consandl: PIMG('US Storm Tops Loop', 'Pro: Satellite', `${NESDIS}/CONUS/Sandwich/GOES19-CONUS-Sandwich-625x375.gif`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  p_gasand: PIMG('Georgia Storm Tops', 'Pro: Satellite', `${NESDIS}/SECTOR/ga/Sandwich/500x500.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/', 10),
+  p_gasandl: PIMG('Georgia Storm Tops Loop', 'Pro: Satellite', `${NESDIS}/SECTOR/ga/Sandwich/GOES19-GA-Sandwich-1000x1000.gif`, 'https://www.star.nesdis.noaa.gov/GOES/', 10),
+  p_glmtaw: PIMG('Tropical Atlantic Lightning', 'Pro: Satellite', 'https://cdn.star.nesdis.noaa.gov/GOES19/GLM/SECTOR/taw/EXTENT3/900x540.jpg', 'https://www.star.nesdis.noaa.gov/GOES/', 5),
+  p_glmtawl: PIMG('Tropical Atlantic Lightning Loop', 'Pro: Satellite', 'https://cdn.star.nesdis.noaa.gov/GOES19/GLM/SECTOR/taw/EXTENT3/GOES19-TAW-EXTENT3-900x540.gif', 'https://www.star.nesdis.noaa.gov/GOES/', 5),
+  p_conus0: PIMG('US Radar Right Now', 'Pro: Forecast Maps', 'https://radar.weather.gov/ridge/standard/CONUS-LARGE_0.gif', 'https://radar.weather.gov/', 5),
+  p_ero4: PIMG('Flash Flood Risk: Day 4', 'Pro: Forecast Maps', `${WPC}/qpf/ero_d45/images/d4wbg.gif`, `${WPC}/qpf/excessive_rainfall_outlook_ero.php`, 180),
+  p_allf: PIMG('Next Few Days Forecast Loop', 'Pro: Forecast Maps', `${WPC}/basicwx/allfcsts_loop_ndfd.gif`, `${WPC}/basicwx/basicwx_ndfd.php`, 180),
+  p_medr: PIMG('Days 3-7 Forecast Map', 'Pro: Forecast Maps', `${WPC}/medr/5dayfcst_wbg_conus.gif`, `${WPC}/medr/`, 360),
+  p_haz37: PIMG('Hazards Outlook Days 3-7', 'Pro: Forecast Maps', `${WPC}/threats/final/hazards_d3_7_contours.png`, `${WPC}/threats/threats.php`, 360),
+  p_sky: PIMG('Sky Cover Forecast', 'Pro: Forecast Maps', 'https://graphical.weather.gov/images/conus/Sky1_conus.png', 'https://graphical.weather.gov/', 120),
+  p_wspd: PIMG('Wind Speed Forecast', 'Pro: Forecast Maps', 'https://graphical.weather.gov/images/conus/WindSpd1_conus.png', 'https://graphical.weather.gov/', 120),
+  p_maxt: PIMG('High Temperature Forecast', 'Pro: Forecast Maps', 'https://graphical.weather.gov/images/conus/MaxT1_conus.png', 'https://graphical.weather.gov/', 120),
+  p_mint: PIMG('Low Temperature Forecast', 'Pro: Forecast Maps', 'https://graphical.weather.gov/images/conus/MinT1_conus.png', 'https://graphical.weather.gov/', 120),
+  p_spckey: PIMG('SPC Risk Category Key', 'Pro: Forecast Maps', `${SPC}/new/images/Outlook-category-descriptions.png`, `${SPC}/`, 1440),
+  p_dro: PIMG('Drought Outlook (CPC)', 'Pro: Fire, Drought & UV', 'https://www.cpc.ncep.noaa.gov/products/predictions/tools/edb/sbfinal.gif', 'https://www.cpc.ncep.noaa.gov/', 1440),
+  p_fire: PIMG('Wildfire Potential This Month (NIFC)', 'Pro: Fire, Drought & UV', 'https://www.nifc.gov/nicc-files/predictive/outlooks/month1_outlook.png', 'https://www.nifc.gov/nicc/predictive-services/outlooks', 1440),
+  p_uv: PIMG('UV Index Forecast (CPC)', 'Pro: Fire, Drought & UV', 'https://www.cpc.ncep.noaa.gov/products/stratosphere/uv_index/gif_files/uvi_usa_f1_wmo.gif', 'https://www.cpc.ncep.noaa.gov/products/stratosphere/uv_index/', 720),
+  p_strikes: PIMG('US Hurricane Landfalls (NHC)', 'Pro: Climatology', 'https://www.nhc.noaa.gov/climo/images/strikes_us.jpg', 'https://www.nhc.noaa.gov/climo/', 10080),
+  p_campfire: PIMG('Atlantic Season Activity (NHC)', 'Pro: Climatology', 'https://www.nhc.noaa.gov/climo/images/2021climo/AtlanticCampfire_sm.png', 'https://www.nhc.noaa.gov/climo/', 10080),
+  p_season: PIMG('2025 Season Tracks (NHC)', 'Pro: Climatology', 'https://www.nhc.noaa.gov/data/tcr/track_maps/atl_season_2025_sm.png', 'https://www.nhc.noaa.gov/data/tcr/', 10080),
   // ---- links & custom ----
   links: { title: 'Weather Links', cat: 'Links & Custom', size: 'm', kind: 'local' },
   custom_image: { title: 'Custom Image or Loop', cat: 'Links & Custom', size: 'm', kind: 'custom' },
@@ -149,10 +210,19 @@ export const TEMPLATES = {
   severe: { name: 'Severe', pro: true, w: [['alerts', 'm'], ['spc_d1', 'm'], ['spc_torn', 'm'], ['spc_hail', 'm'], ['spc_wind', 'm'], ['spc_ww', 'm'], ['spc_md', 'm'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_glm_loop', 'm'], ['meso_scp', 'm'], ['meso_stp', 'm'], ['meso_cape', 'm'], ['meso_shr', 'm'], ['spc_rpt', 'm'], ['spc_d2', 'm'], ['spc_d3', 'm'], ['spc_d48', 'm'], ['nws_haz', 'l'], ['hailhist', 'l'], ['scales', 'l']] },
   rain: { name: 'Rain & Winter', w: [['wpc_sfc', 'l'], ['ncfc1', 'm'], ['ncfc2', 'm'], ['ncfc3', 'm'], ['wpc_qpf1', 'm'], ['wpc_qpf2', 'm'], ['wpc_qpf3', 'm'], ['wpc_qpf5', 'm'], ['wpc_qpf7', 'm'], ['wpc_ero', 'm'], ['wpc_ero2', 'm'], ['wpc_ero3', 'm'], ['cpc_610t', 'm'], ['cpc_610p', 'm'], ['cpc_814t', 'm'], ['cpc_814p', 'm'], ['cpc_34t', 'm'], ['cpc_30t', 'm'], ['usdm', 'm']] },
   sat: { name: 'Satellite & Radar', w: [['goes_conus_loop', 'l'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_ir', 'm'], ['goes_wv_loop', 'm'], ['goes_vis', 'm'], ['goes_air', 'm'], ['goes_sand', 'm'], ['goes_glm', 'm'], ['goes_fire', 'm'], ['sec_ne', 'm'], ['sec_sp', 'm'], ['sec_cgl', 'm'], ['sec_psw', 'm'], ['rl_ne', 'm'], ['rl_sp', 'm'], ['rl_psw', 'm'], ['radar_se', 'm']] },
+  winter: { name: 'Winter Weather', w: [['alerts', 'm'], ['w_snow1', 'm'], ['w_snow2', 'm'], ['w_snow3', 'm'], ['w_snow8', 'm'], ['w_ice1', 'm'], ['w_snowamt', 'l'], ['w_iceamt', 'l'], ['w_feels', 'm'], ['wpc_sfc', 'm'], ['ncfc1', 'm'], ['cpc_610t', 'm'], ['cpc_814t', 'm']] },
+  promaps: { name: 'Pro Analysis', w: [['p_tafb_usa', 'l'], ['p_sfc24', 'm'], ['p_sfc48', 'm'], ['p_sfc72', 'm'], ['p_sht', 'm'], ['p_steer2', 'm'], ['p_vor500', 'm'], ['p_ohc', 'm'], ['p_sstaw', 'm'], ['p_ssta7', 'm'], ['p_ascat', 'l'], ['p_tawsandl', 'l'], ['p_glmtawl', 'm'], ['p_mjo', 'm'], ['p_gth', 'm'], ['p_allf', 'l'], ['p_haz37', 'm'], ['p_medr', 'm']] },
   space: { name: 'Space & Marine', w: [['aurora_n', 'm'], ['aurora_tn', 'm'], ['kp', 'm'], ['swx', 'l'], ['sun', 'm'], ['opc_atl', 'l'], ['opc_pac', 'l'], ['marine_links', 'm']] },
 };
 const fromTpl = (k) => TEMPLATES[k].w.map(([type, size]) => ({ id: uid(), type, size }));
-const DEFAULT_LAYOUT = fromTpl('mine');
+// Northern locations (about Virginia and north) get a winter row in the default layout
+const northern = () => (store.get('loc', null)?.lat ?? 33) >= 37;
+const defaultLayout = () => {
+  const l = fromTpl('mine');
+  if (northern()) l.splice(4, 0, ...[['w_snow1', 'm'], ['w_snowamt', 'm'], ['w_ice1', 'm']].map(([type, size]) => ({ id: uid(), type, size })));
+  return l;
+};
+const DEFAULT_LAYOUT = defaultLayout();
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 // Pages: [{ id, name, layout }]. Migrates the old single layout.
@@ -204,7 +274,7 @@ export function initDashboard() {
   $('#dashTpl').onclick = openLayouts;
   $('#dashPages').addEventListener('click', onPagesClick);
   window.addEventListener('plan', () => { if (!$('#view-dashboard').hidden) render(); });
-  $('#dashReset').onclick = () => { if (confirmInline('#dashReset', 'Reset layout?')) { layout = fromTpl('mine'); save(); render(); } };
+  $('#dashReset').onclick = () => { if (confirmInline('#dashReset', 'Reset layout?')) { layout = defaultLayout(); save(); render(); } };
   $('#dashGrid').addEventListener('click', onGridClick);
   $('#dashGrid').addEventListener('change', onGridChange);
   if (window.Sortable) {
@@ -250,6 +320,7 @@ function widgetHTML(w) {
 
 function bodyHTML(w, def) {
   const { M, loc, models, afd } = ctx;
+  if (def.pro && !has('pro')) return `<div class="locked-card"><p>${esc(def.title)} is part of the Updraft Pro map collection.</p><button class="btn" data-unlock="maps">Unlock with Pro</button></div>`;
   if (def.kind === 'image' || w.type === 'custom_image') {
     const src = def.src || w.params?.src; const refresh = def.refresh || 10;
     return `<img class="w-img" loading="lazy" data-src="${esc(src)}" data-refresh="${refresh}" src="${esc(bust(src, refresh))}" alt="${esc(def.title || w.params?.title || '')}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'empty',textContent:'Image unavailable right now'}))">${def.note ? `<div class="muted small">${esc(def.note)}</div>` : ''}`;
@@ -438,7 +509,7 @@ function onGridClick(e) {
   if (dp) { const w = layout.find((x) => x.id === dp.dataset.w); if (w) setDoppler(w, { prod: dp.dataset.dprod }); return; }
   const sp = e.target.closest('[data-sprod]');
   if (sp) { const w = layout.find((x) => x.id === sp.dataset.w); if (w) { w.params = { ...(w.params || {}), prod: sp.dataset.sprod }; save(); render(); } return; }
-  const un = e.target.closest('[data-unlock]'); if (un) { openPricing(un.dataset.unlock === 'site' ? 'Radar site loops are part of Updraft Pro.' : 'The hurricane tracker is part of Updraft Plus.'); return; }
+  const un = e.target.closest('[data-unlock]'); if (un) { openPricing(un.dataset.unlock === 'site' ? 'Doppler radar sites are part of Updraft Pro.' : un.dataset.unlock === 'maps' ? 'The full map collection is part of Updraft Pro.' : 'The hurricane tracker is part of Updraft Plus.'); return; }
   const b = e.target.closest('[data-act]'); const wEl = e.target.closest('.widget');
   if (b && wEl) {
     const w = layout.find((x) => x.id === wEl.dataset.id);
@@ -459,7 +530,7 @@ function openCatalog() {
   for (const [id, d] of Object.entries(WIDGETS)) (cats[d.cat] ||= []).push([id, d]);
   const used = new Set(layout.map((w) => w.type));
   const html = `<div class="catalog">${Object.entries(cats).map(([c, list]) => `<h4>${esc(c)}</h4><div class="cat-grid">${list.map(([id, d]) => `
-    <button class="cat-item${used.has(id) && d.kind !== 'custom' ? ' used' : ''}" data-add="${id}"><b>${esc(d.title)}</b><span>${used.has(id) && d.kind !== 'custom' ? 'On dashboard · add another' : 'Add'}</span></button>`).join('')}</div>`).join('')}
+    <button class="cat-item${used.has(id) && d.kind !== 'custom' ? ' used' : ''}" data-add="${id}"><b>${esc(d.title)}${d.pro || id === 'doppler' || id === 'site_loop' ? ' <span class="tier-badge t-pro">PRO</span>' : ''}</b><span>${used.has(id) && d.kind !== 'custom' ? 'On dashboard · add another' : 'Add'}</span></button>`).join('')}</div>`).join('')}
     <div id="customForm" hidden class="custom-form"><h4>Custom widget</h4>
       <label>Title<input id="cfTitle" placeholder="e.g. Euro ensemble"></label>
       <label id="cfSrcL">Image or GIF address<input id="cfSrc" placeholder="https://…/image.png"></label>
@@ -468,6 +539,7 @@ function openCatalog() {
   window.dispatchEvent(new CustomEvent('modal', { detail: { title: 'Add a widget', html } }));
   $$('[data-add]').forEach((b) => b.onclick = () => {
     const type = b.dataset.add, d = WIDGETS[type];
+    if ((d.pro || type === 'doppler' || type === 'site_loop') && !has('pro')) { window.dispatchEvent(new CustomEvent('modal-close')); openPricing(`${d.title.replace(' (Pro)', '')} is part of Updraft Pro.`); return; }
     if (d.kind === 'custom') {
       $('#customForm').hidden = false; $('#cfSrcL').hidden = type === 'custom_link'; $('#customForm').scrollIntoView({ behavior: 'smooth' });
       $('#cfSave').onclick = () => {
