@@ -325,7 +325,8 @@ function wxCardHTML(M, loc, away = false) {
   const xh = '<svg class="wx-xh" width="14" height="14" viewBox="0 0 24 24"><path d="M12 2v7M12 15v7M2 12h7M15 12h7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
   return `<div class="wx-top">${away ? `<button class="wx-ic" id="wxHome" title="Back to ${esc(state.loc?.name || 'my location')}">${homeSvg}</button>` : `<button class="wx-ic${watchId != null ? ' on' : ''}" id="wxLock" title="Follow my location">${lockSvg}</button>`}
       <button class="wx-loc" id="wxLoc" title="${away ? 'Weather at the crosshair' : 'Search places'}"><span>${away ? xh : ''}${esc(loc.name)}</span><span class="wx-mini">${fmtT(c.temp)} ${icon(c.icon, 22)}</span></button>
-      <button class="wx-ic" id="wxPin" title="My places"><svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 25S2 15 2 9.5a9 9 0 0 1 18 0C20 15 11 25 11 25z" fill="currentColor"/><path d="M11 4.8l1.5 3.1 3.4.5-2.5 2.4.6 3.4-3-1.6-3 1.6.6-3.4-2.5-2.4 3.4-.5z" fill="var(--card)"/></svg></button></div>
+      <button class="wx-ic" id="wxPin" title="My places"><svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 25S2 15 2 9.5a9 9 0 0 1 18 0C20 15 11 25 11 25z" fill="currentColor"/><path d="M11 4.8l1.5 3.1 3.4.5-2.5 2.4.6 3.4-3-1.6-3 1.6.6-3.4-2.5-2.4 3.4-.5z" fill="var(--card)"/></svg></button>
+      <button class="wx-ic wx-min" id="wxMin" title="Minimize" aria-label="Minimize the weather card"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></button></div>
     <div class="wx-body">
       <a class="wx-ring" href="#forecast" title="Full forecast">${ring}<div class="wx-now"><b>${fmtT(c.temp)}</b><span>now</span></div></a>
       <div class="wx-hls">${hiFirst ? pill(hiH, hi) + pill(loH, lo) : pill(loH, lo) + pill(hiH, hi)}</div>
@@ -340,8 +341,11 @@ function wireCard() {
   // away from home: tapping the card opens the full forecast for the crosshair spot
   if (state.center) $$('#wxCard .wx-ring, #wxCard .wx-cond').forEach((a) => a.onclick = (e) => { e.preventDefault(); const l = state.center.loc; pickPoint({ lat: l.lat, lon: l.lon }, l.name); });
   $('#wxPin').onclick = openPlaces;
-  $('#wxLoc').onclick = () => { $('#q').focus(); };
-  $('#wxGrab').onclick = () => { $('#wxCard').classList.toggle('collapsed'); store.set('cardCollapsed', $('#wxCard').classList.contains('collapsed')); };
+  const setCollapsed = (on) => { $('#wxCard').classList.toggle('collapsed', on); store.set('cardCollapsed', on); };
+  // minimized: the card is a small temperature pill; tap it to open again
+  $('#wxLoc').onclick = () => { if ($('#wxCard').classList.contains('collapsed')) setCollapsed(false); else $('#q').focus(); };
+  $('#wxMin').onclick = () => setCollapsed(true);
+  $('#wxGrab').onclick = () => setCollapsed(!$('#wxCard').classList.contains('collapsed'));
 }
 function wireAlertButtons(root) {
   $$('#fcAlerts [data-alert]', root).forEach((b) => b.onclick = () => showAlert(state.M.alerts[+b.dataset.alert]));

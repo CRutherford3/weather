@@ -619,3 +619,13 @@ body.popup-open .crosshair { opacity: 0; }
 .mar-tides div.lo { border-left-color: #64748b; } .mar-tides small { color: var(--muted); }
 .mar-zone p { margin: 6px 0; font-size: 13.5px; line-height: 1.45; }
 @media (max-width: 900px) { .mar-grid { grid-template-columns: 1fr; } .mar-now, .mar-tides { grid-template-columns: repeat(2, 1fr); } }
+/* minimize button + minimized pill */
+.wx-top { grid-template-columns: 40px minmax(0, 1fr) 40px 36px; }
+.wx-min { width: 36px; }
+.wx-card.collapsed { width: auto; max-width: min(360px, calc(100% - 24px)); padding: 4px 10px; border-radius: 99px; right: auto; }
+.wx-card.collapsed .wx-top { grid-template-columns: minmax(0, 1fr); }
+.wx-card.collapsed .wx-ic, .wx-card.collapsed .wx-grab { display: none; }
+.wx-card.collapsed .wx-loc { font-size: 15px; gap: 8px; cursor: pointer; padding: 2px 4px; }
+.wx-card.collapsed .wx-mini { order: -1; font-size: 17px; }
+.wx-card.collapsed .wx-loc::after { content: '+'; font-size: 18px; color: var(--muted); margin-left: 2px; }
+@media (max-width: 760px) { .wx-card.collapsed { right: auto; left: 8px; } }
