@@ -32,7 +32,7 @@ export const STYLES = {
 const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
-  radarSrc: store.get('radarSrc', 'us') === 'site' ? 'us' : store.get('radarSrc', 'us'), // single-site radar now lives on the dashboard only
+  radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
   opacity: store.get('opacity', 0.75),
   speed: store.get('speed', 450),
   sat: store.get('satType', 'ir'),
@@ -40,13 +40,13 @@ export const S = {
   hail: store.get('hailHours', '72'),
   site: store.get('radarSite', null),     // e.g. 'MLB' for KMLB
   siteProd: store.get('siteProd', 'N0B') === 'N0S' || store.get('siteProd', 'N0B') === 'N0U' ? 'N0S' : 'N0B', // N0B reflectivity, N0S storm-relative velocity
-  layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {}), { sites: false }),
+  layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
 const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
 
 export const LAYER_GROUPS = [
   ['Radar & Satellite', [
-    ['radar', 'Radar', 'radarOpts'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
+    ['radar', 'Radar', 'radarOpts'], ['sites', 'Doppler Radar (tap a site)'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
@@ -159,7 +159,14 @@ async function enable(id) {
 }
 function disable(id) { try { active[id]?.remove?.(); } catch { /* ignore */ } delete active[id]; }
 function refresh(id) { disable(id); enable(id); }
-export function toggleLayer(id, on) { S.layers[id] = on; applyLayers(); }
+export function toggleLayer(id, on) {
+  S.layers[id] = on;
+  if (id === 'sites') {
+    if (on) toast('Tap a radar site to view its Doppler radar');
+    else if (S.radarSrc === 'site') { S.radarSrc = 'us'; disable('radar'); } // back to Hi-Def
+  }
+  applyLayers();
+}
 const layerName = (id) => LAYER_GROUPS.flatMap((g) => g[1]).find((r) => r[0] === id)?.[1] || id;
 
 // helpers
@@ -222,6 +229,7 @@ const R = { frames: [], idx: 0, playing: true, timer: null, hold: 0 };
 ADD.radar = async () => { await buildRadar(); return { remove: clearRadar }; };
 async function buildRadar() {
   const frames = [];
+  if (S.radarSrc === 'site' && !(S.layers.sites && canLayer('sites'))) S.radarSrc = 'us'; // Doppler layer off: back to Hi-Def
   if (S.radarSrc === 'site') {
     if (!S.site) { const c = map.getCenter(); S.site = nearestSite(await radarSites(), c.lat, c.lng)?.code || 'MLB'; save(); }
     let scans = [];

@@ -240,7 +240,7 @@ function widgetHTML(w) {
   const def = WIDGETS[w.type]; if (!def) return '';
   const title = w.params?.title || def.title;
   const link = def.link || w.params?.link;
-  return `<section class="widget w-${w.size}" data-id="${w.id}">
+  return `<section class="widget w-${w.size}${w.type === 'daily' ? ' w-tall' : ''}" data-id="${w.id}">
     <header class="w-head"><span class="w-grip" aria-hidden="true">⋮⋮</span><h3>${esc(title)}</h3>
       <div class="w-tools">${link ? `<a class="w-btn" href="${esc(link)}" target="_blank" rel="noopener" title="Open source">↗</a>` : ''}
       <button class="w-btn edit-only" data-act="size" title="Change size">${w.size.toUpperCase()}</button>

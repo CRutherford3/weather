@@ -595,3 +595,5 @@ body.popup-open .crosshair { opacity: 0; }
 .dop-tip { background: rgba(11,16,32,.8) !important; color: #e9d5ff !important; border: 0 !important; box-shadow: none !important; font: 700 10.5px Inter, sans-serif; padding: 1px 4px !important; }
 .dop-tip::before { display: none; }
 @media (max-width: 760px) { .dop-map { height: 300px; } .dop-bar .muted { display: none; } }
+/* the 16-day list spans two rows so the next widget fills the space beside it */
+@media (min-width: 761px) { .dash-grid .w-tall { grid-row: span 2; } }
