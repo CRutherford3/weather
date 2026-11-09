@@ -285,7 +285,8 @@ async function loadCenter(lat, lon) {
   try {
     const [j, name] = await Promise.all([cardPoint(lat, lon), reverseGeocode(lat, lon).catch(() => '')]);
     if (tok !== cardTok) return;
-    state.center = { loc: { lat, lon, name: name || `${lat.toFixed(2)}, ${lon.toFixed(2)}` }, M: miniModel(j) };
+    const nm = !name || /economic zone|territorial|ocean|sea$/i.test(name) ? `Offshore ${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}` : name;
+    state.center = { loc: { lat, lon, name: nm }, M: miniModel(j) };
     renderCard();
   } catch (e) { console.warn('center card', e); } finally { if (tok === cardTok) $('#wxCard').classList.remove('busy'); }
 }
