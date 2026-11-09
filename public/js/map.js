@@ -39,7 +39,7 @@ export const S = {
   rain: store.get('rainType', '24h'),
   hail: store.get('hailHours', '72'),
   site: store.get('radarSite', null),     // e.g. 'MLB' for KMLB
-  siteProd: store.get('siteProd', 'N0B'), // N0B reflectivity, N0U velocity
+  siteProd: store.get('siteProd', 'N0B') === 'N0S' || store.get('siteProd', 'N0B') === 'N0U' ? 'N0S' : 'N0B', // N0B reflectivity, N0S storm-relative velocity
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
 const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
@@ -343,7 +343,7 @@ ADD.sites = async () => {
   ], (f, ll) => {
     const p = f.properties, cur = S.radarSrc === 'site' && S.site === p.code;
     const pop = popup(f.geometry.coordinates, `<div class="qp"><div class="qp-name">${esc(p.id)} · ${esc(p.name)}</div><div class="qp-row">${cur ? 'Showing this radar now' : 'NEXRAD Doppler radar'}</div>
-      <div class="qp-btns"><button class="btn small${cur && S.siteProd === 'N0B' ? '' : ' ghost'}" data-sp="N0B">Reflectivity</button><button class="btn small${cur && S.siteProd === 'N0U' ? '' : ' ghost'}" data-sp="N0U">Velocity</button></div>
+      <div class="qp-btns"><button class="btn small${cur && S.siteProd === 'N0B' ? '' : ' ghost'}" data-sp="N0B">Reflectivity</button><button class="btn small${cur && S.siteProd === 'N0S' ? '' : ' ghost'}" data-sp="N0S">Velocity</button></div>
       ${cur ? '<div class="qp-btns"><button class="btn small ghost" data-sp="mosaic">Back to US mosaic</button></div>' : ''}</div>`);
     setTimeout(() => pop.getElement()?.querySelectorAll('[data-sp]').forEach((b) => b.onclick = () => {
       pop.remove();
@@ -643,8 +643,8 @@ function buildDock() {
 }
 function updateDock() {
   const on = S.layers.radar;
-  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : S.radarSrc === 'site' ? `K${S.site || ''} ${S.siteProd === 'N0U' ? 'Velocity' : 'Radar'}` : 'Global Radar') : 'Radar Off';
-  $('#legendBar').classList.toggle('vel', on && S.radarSrc === 'site' && S.siteProd === 'N0U');
+  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : S.radarSrc === 'site' ? `K${S.site || ''} ${S.siteProd === 'N0S' ? 'Velocity' : 'Radar'}` : 'Global Radar') : 'Radar Off';
+  $('#legendBar').classList.toggle('vel', on && S.radarSrc === 'site' && S.siteProd === 'N0S');
   $('#legendBar').style.opacity = on ? 1 : 0.25;
   $('#tlPlay').disabled = !on;
   if (!on) { $('#tlTime').textContent = '--'; $('#tlAgo').textContent = ''; }
@@ -658,7 +658,7 @@ function openSourceSheet() {
     ${opt('off', 'Radar Off', 'Hide the radar loop')}</div>
     <div class="sheet-sub">Radar site</div>
     <div class="set-pad site-pick"><select id="sitePick"><option>Loading radar sites…</option></select>
-      <div class="seg" id="siteProd"><button data-v="N0B" class="${S.siteProd === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-v="N0U" class="${S.siteProd === 'N0U' ? 'on' : ''}">Velocity</button></div>
+      <div class="seg" id="siteProd"><button data-v="N0B" class="${S.siteProd === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-v="N0S" class="${S.siteProd === 'N0S' ? 'on' : ''}">Velocity</button></div>
       <label class="lrow-inline"><input type="checkbox" id="showSites" ${S.layers.sites ? 'checked' : ''}> Show radar sites on the map (tap one to switch)</label></div>
     <div class="sheet-sub">Loop settings</div>
     <label class="slider">Opacity <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="${S.opacity}"></label>
