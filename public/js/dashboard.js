@@ -241,6 +241,7 @@ function bodyHTML(w, def) {
   }
   if (w.type === 'custom_link') return `<a class="big-link" href="${esc(w.params?.link)}" target="_blank" rel="noopener">${esc(w.params?.title || w.params?.link)} ↗</a>`;
   if (w.type === 'links') return linksHTML();
+  if ((w.type === 'storms' || w.type === 'spaghetti') && !has('plus')) return `<div class="locked-card"><p>Live hurricane tracking, forecast cones and spaghetti model plots are part of Updraft Plus.</p><button class="btn" data-unlock="hurricanes">Unlock with Plus</button></div>`;
   if (w.type === 'storms') return stormsHTML(ctx.storms);
   if (w.type === 'spaghetti') return spaghettiHTML(ctx.storms);
   if (w.type === 'models_links') return modelLinksHTML();
@@ -345,6 +346,7 @@ function mountMiniMap(w) {
 }
 
 function onGridClick(e) {
+  if (e.target.closest('[data-unlock]')) { openPricing('The hurricane tracker is part of Updraft Plus.'); return; }
   const b = e.target.closest('[data-act]'); const wEl = e.target.closest('.widget');
   if (b && wEl) {
     const w = layout.find((x) => x.id === wEl.dataset.id);
