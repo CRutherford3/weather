@@ -30,7 +30,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, buoys: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
@@ -39,11 +39,13 @@ export const S = {
   sat: store.get('satType', 'ir'),
   rain: store.get('rainType', '24h'),
   hail: store.get('hailHours', '72'),
+  surgeCat: store.get('surgeCat', '3'),
+  snowDay: store.get('snowDay', '1'), snowAmt: store.get('snowAmt', '4'),
   site: store.get('radarSite', null),     // e.g. 'MLB' for KMLB
   siteProd: store.get('siteProd', 'N0B') === 'N0S' || store.get('siteProd', 'N0B') === 'N0U' ? 'N0S' : 'N0B', // N0B reflectivity, N0S storm-relative velocity
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
-const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
+const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
 
 export const LAYER_GROUPS = [
   ['Radar & Satellite', [
@@ -56,7 +58,8 @@ export const LAYER_GROUPS = [
   ['Conditions', [
     ['fronts', 'Fronts & Pressure'], ['winds', 'Winds (animated)'], ['temps', 'Temperatures'], ['aqi', 'Air Quality'],
   ]],
-  ['Tropics', [['tropics', 'Hurricane Tracker']]],
+  ['Tropics', [['tropics', 'Hurricane Tracker'], ['twoutlook', 'Development Areas (2 & 7 day)'], ['windprob', 'Tropical Storm Wind Chances'], ['surgerisk', 'Storm Surge Risk', 'surgeOpts']]],
+  ['Snow & Ice', [['snowdepth', 'Snow Depth Now'], ['snowprob', 'Snow & Ice Chances', 'snowOpts'], ['snowcover', 'Snow & Sea Ice Cover']]],
   ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms']]],
   ['More', [
     ['places', 'My Places'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
@@ -392,6 +395,20 @@ ADD.buoys = async () => {
     setTimeout(() => { const b = document.getElementById('bmar'); if (b) b.onclick = () => { closePopups(); H.onPick?.({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }, `Buoy ${p.id}`); }; }, 0);
   });
 };
+
+// ================= Tropics & snow (NOAA map services) =================
+const NOAA_MS = 'https://mapservices.weather.noaa.gov';
+const agsExport = (svc, layers, img = false) => `${NOAA_MS}/${svc}/${img ? 'exportImage' : 'export'}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true${layers ? `&layers=show:${layers}` : ''}&f=image`;
+const bustQ = (min) => `&_=${Math.floor(Date.now() / (min * 60e3))}`;
+ADD.twoutlook = async () => raster('twoutlook', agsExport('tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer', '1,2,3,33') + bustQ(30), { opacity: 0.85, maxzoom: 10 });
+ADD.windprob = async () => raster('windprob', agsExport('tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer', '30,18') + bustQ(30), { opacity: 0.7, maxzoom: 10 });
+ADD.surgerisk = async () => { const id = { 1: 2, 2: 6, 3: 10, 4: 14, 5: 18 }[S.surgeCat] || 10; toast('Zoom in on the coast to see surge risk'); return raster('surgerisk', agsExport('tropical/rest/services/tropical/StormSurgeRisk/MapServer', id), { opacity: 0.75, maxzoom: 16 }); };
+ADD.snowdepth = async () => raster('snowdepth', agsExport('raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer', '0') + bustQ(180), { opacity: 0.7, maxzoom: 12, before: firstRadarOr() });
+ADD.snowprob = async () => {
+  const off = { 1: 0, 2: 5, 3: 10 }[S.snowDay] || 0, sub = { 4: 1, 8: 2, 12: 3, ice: 4 }[S.snowAmt] || 1;
+  return raster('snowprob', agsExport('vector/rest/services/precip/wpc_prob_winter_precip/MapServer', off + sub) + bustQ(120), { opacity: 0.7, maxzoom: 10, before: firstRadarOr() });
+};
+ADD.snowcover = async () => raster('snowcover', agsExport('raster/rest/services/obs/usnic_ims_snow_ice_1km/ImageServer', '', true) + bustQ(360), { opacity: 0.55, maxzoom: 9, before: firstRadarOr() });
 
 // ================= More marine layers =================
 // Sea surface temperature, NASA GIBS (MUR blend, yesterday's analysis)
@@ -776,6 +793,8 @@ function openStyleSheet() {
 const OPTS = {
   radarOpts: () => `<label class="slider">Opacity <input type="range" data-o="opacity" min="0.2" max="1" step="0.05" value="${S.opacity}"></label><label class="slider">Loop speed <input type="range" data-o="speed" min="150" max="1000" step="50" value="${1150 - S.speed}"></label>`,
   satOpts: () => `<div class="seg" data-o="sat">${[['ir', 'Infrared'], ['vis', 'Visible'], ['wv', 'Water vapor'], ['geocolor', 'True color']].map(([v, t]) => `<button data-v="${v}" class="${S.sat === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">True color runs about 90 minutes behind real time.</small>`,
+  surgeOpts: () => `<div class="seg" data-o="surgeCat">${['1', '2', '3', '4', '5'].map((v) => `<button data-v="${v}" class="${S.surgeCat === v ? 'on' : ''}">Cat ${v}</button>`).join('')}</div><small class="muted">Worst-case flooding above ground for a hurricane of that strength (NHC). Not a forecast for any one storm.</small>`,
+  snowOpts: () => `<div class="seg" data-o="snowDay">${['1', '2', '3'].map((v) => `<button data-v="${v}" class="${S.snowDay === v ? 'on' : ''}">Day ${v}</button>`).join('')}</div><div class="seg" data-o="snowAmt">${[['4', '4"+ snow'], ['8', '8"+'], ['12', '12"+'], ['ice', '¼" ice']].map(([v, t]) => `<button data-v="${v}" class="${S.snowAmt === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">WPC chance of reaching that amount.</small>`,
   hailOpts: () => `<div class="seg" data-o="hail">${[['24', '24 hours'], ['72', '3 days'], ['168', '7 days']].map(([v, t]) => `<button data-v="${v}" class="${S.hail === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">Hail reports sized by stone size, plus today's SPC hail risk area.</small>`,
   rainOpts: () => `<div class="seg" data-o="rain">${[['1h', 'Past hour'], ['24h', '24 hours'], ['72h', '72 hours']].map(([v, t]) => `<button data-v="${v}" class="${S.rain === v ? 'on' : ''}">${t}</button>`).join('')}</div>`,
 };
@@ -798,7 +817,7 @@ function openLayersSheet() {
     $$('.seg[data-o]', b).forEach((sg) => $$('button', sg).forEach((btn) => btn.onclick = () => {
       $$('button', sg).forEach((x) => x.classList.toggle('on', x === btn));
       const key = sg.dataset.o; S[key] = btn.dataset.v; save();
-      const lid = key === 'sat' ? 'sat' : key === 'hail' ? 'hail' : 'rain';
+      const lid = key === 'sat' ? 'sat' : key === 'hail' ? 'hail' : key === 'surgeCat' ? 'surgerisk' : key === 'snowDay' || key === 'snowAmt' ? 'snowprob' : 'rain';
       if (!canLayer(lid)) { gate(lid, layerName(lid)); return; }
       S.layers[lid] = true; $(`[data-layer="${lid}"]`, b).checked = true; refresh(lid); updateDock();
     }));
