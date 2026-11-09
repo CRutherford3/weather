@@ -5,7 +5,7 @@ import * as F from './forecast.js';
 import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
 import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge } from './plan.js';
-import { initRoute } from './route.js';
+import { initRoute, openRoute } from './route.js';
 import { getData } from './util.js';
 
 const state = {
@@ -43,17 +43,21 @@ $('#unitBtn').onclick = () => { units.system = units.system === 'imperial' ? 'me
 // ---------- routing ----------
 const VIEWS = ['radar', 'forecast', 'dashboard'];
 function route() {
-  const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'radar';
+  const h = location.hash.slice(1);
+  const isRoute = h === 'route';
+  const v = VIEWS.includes(h) ? h : 'radar';
   $('#modal').hidden = true;
   Map.closePopups(); closeSheet();
   VIEWS.forEach((x) => { $(`#view-${x}`).hidden = x !== v; });
-  $$('[data-view]').forEach((a) => a.classList.toggle('active', a.dataset.view === v));
+  $$('[data-view]').forEach((a) => a.classList.toggle('active', a.dataset.view === (isRoute ? 'route' : v)));
   document.body.dataset.view = v;
   if (v === 'radar') setTimeout(Map.invalidate, 50);
+  if (isRoute) setTimeout(openRoute, 60); // Route tab: the map plus the route planner (Pro)
   if (v === 'forecast' || v === 'dashboard') loadExtras();
   if (v === 'dashboard') showDashboard();
 }
 window.addEventListener('hashchange', route);
+$('a[data-view="route"]').addEventListener('click', (e) => { if (location.hash === '#route') { e.preventDefault(); openRoute(); } });
 
 // ---------- location ----------
 let userPicked = false;
