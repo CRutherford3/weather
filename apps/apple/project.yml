@@ -24,8 +24,8 @@ targets:
       base:
         # Permanent store ID. Holds no app name on purpose, so the name can change later.
         PRODUCT_BUNDLE_IDENTIFIER: io.dialcheck.weather
-        PRODUCT_NAME: Updraft
-        INFOPLIST_KEY_CFBundleDisplayName: Updraft
+        PRODUCT_NAME: DopplerIQ
+        INFOPLIST_KEY_CFBundleDisplayName: DopplerIQ
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.weather
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Shows radar, alerts and the forecast where you are."

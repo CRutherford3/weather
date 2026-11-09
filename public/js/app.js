@@ -407,7 +407,7 @@ function openSettings(view = 'main') {
     return;
   }
   if (view === 'privacy') {
-    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. There are no accounts and no tracking by Updraft.</p><p>On the free plan, ads may be shown by Google AdSense, which can use cookies to pick ads. Paid plans have no ads.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
+    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. There are no accounts and no tracking by DopplerIQ.</p><p>On the free plan, ads may be shown by Google AdSense, which can use cookies to pick ads. Paid plans have no ads.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
     return;
   }
   const imp = units.system === 'imperial';
@@ -415,7 +415,7 @@ function openSettings(view = 'main') {
     <div class="sheet-sub">Appearance</div>
     <div class="set-pad"><div class="seg big" id="setTheme">${['auto', 'dark', 'light'].map((t) => `<button data-v="${t}" class="${state.theme === t ? 'on' : ''}">${t === 'auto' ? 'Auto' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
     <div class="sheet-sub">Your plan</div>
-    <button class="set-row" id="setPlan"><span><b>Updraft ${TIERS[plan()].name}</b><small>${plan() === 'free' ? 'Go ad-free and unlock every layer' : 'Thanks for supporting Updraft'}</small></span><i class="chev">›</i></button>
+    <button class="set-row" id="setPlan"><span><b>DopplerIQ ${TIERS[plan()].name}</b><small>${plan() === 'free' ? 'Go ad-free and unlock every layer' : 'Thanks for supporting DopplerIQ'}</small></span><i class="chev">›</i></button>
     <div class="set-pad"><small class="muted">Preview plan (testing only, until checkout is connected)</small><div class="seg" id="setPreview">${['free', 'plus', 'pro'].map((t) => `<button data-v="${t}" class="${plan() === t ? 'on' : ''}">${TIERS[t].name}</button>`).join('')}</div></div>
     <div class="sheet-sub">Location</div>
     <div class="lrow"><div class="lrow-main"><span>Follow My Location</span></div><label class="tg"><input type="checkbox" id="setFollow" ${watchId != null ? 'checked' : ''}><span></span></label></div>

@@ -32,7 +32,7 @@ export async function onRequestGet({ request }) {
   try {
     const upstream = await fetch(url, {
       headers: {
-        'User-Agent': 'UpdraftWeather/1.0 (github.com/CRutherford3/weather)',
+        'User-Agent': 'DopplerIQWeather/1.0 (github.com/CRutherford3/weather)',
         Accept: request.headers.get('accept') || 'application/json, application/geo+json, */*',
       },
       cf: { cacheTtl: 60, cacheEverything: true },

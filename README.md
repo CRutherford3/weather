@@ -1,4 +1,4 @@
-# Updraft
+# DopplerIQ
 
 Live radar, severe weather alerts, official forecasts, and a customizable weather dashboard. Works on desktop and phones, and installs to a phone's home screen like an app.
 

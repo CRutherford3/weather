@@ -43,7 +43,7 @@ function tideStations() {
     .catch((e) => { tideP = null; throw e; }));
 }
 const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-const TIDE = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?datum=MLLW&units=english&time_zone=lst_ldt&format=json&application=updraft';
+const TIDE = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?datum=MLLW&units=english&time_zone=lst_ldt&format=json&application=doppleriq';
 
 // ---------- everything for one location ----------
 export async function loadMarine(loc) {

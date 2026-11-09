@@ -37,7 +37,7 @@ export function openPricing(reason) {
       <div class="pc-price">${t.price}<small>${t.per || ''}</small></div><p class="muted small">${esc(t.blurb)}</p>
       <ul>${t.features.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
       ${k === 'free' ? '' : `<button class="btn wide${cur === k ? ' ghost' : ''}" data-buy="${k}">${cur === k ? 'Current plan' : `Get ${t.name}`}</button>`}</div>`; };
-  openSheet('Updraft plans', `${reason ? `<div class="pc-reason">${esc(reason)}</div>` : ''}<div class="price-grid">${['free', 'plus', 'pro'].map(card).join('')}</div>
+  openSheet('DopplerIQ plans', `${reason ? `<div class="pc-reason">${esc(reason)}</div>` : ''}<div class="price-grid">${['free', 'plus', 'pro'].map(card).join('')}</div>
     <p class="muted small sheet-foot">Cancel any time. On iPhone, iPad and Mac, plans are billed through the App Store.</p>`, (b) => {
     $$('[data-buy]', b).forEach((x) => x.onclick = () => {
       const k = x.dataset.buy; if (plan() === k) return;
@@ -50,7 +50,7 @@ export function openPricing(reason) {
 // Gate helper: returns true if allowed, otherwise opens pricing.
 export function gate(feature, label) {
   if (has(tierOf(feature))) return true;
-  openPricing(`${label} is part of Updraft ${TIERS[tierOf(feature)].name}.`);
+  openPricing(`${label} is part of DopplerIQ ${TIERS[tierOf(feature)].name}.`);
   return false;
 }
 
@@ -68,7 +68,7 @@ export function fillAds(root = document) {
       el.innerHTML = `<span class="ad-label">Advertisement</span><ins class="adsbygoogle" style="display:block" data-ad-client="${ADS.client}" data-ad-slot="${ADS.slots[el.dataset.ad]}" data-ad-format="auto" data-full-width-responsive="true"></ins>`;
       try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch { /* blocked */ }
     } else {
-      el.innerHTML = `<span class="ad-label">Advertisement</span><button class="house-ad" data-house><b>Go ad-free with Updraft Plus</b><span>Every map layer, no ads. $2.99/mo</span></button>`;
+      el.innerHTML = `<span class="ad-label">Advertisement</span><button class="house-ad" data-house><b>Go ad-free with DopplerIQ Plus</b><span>Every map layer, no ads. $2.99/mo</span></button>`;
       $('[data-house]', el).onclick = () => openPricing();
     }
   });

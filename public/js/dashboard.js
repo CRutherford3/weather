@@ -322,21 +322,21 @@ function widgetHTML(w) {
 
 function bodyHTML(w, def) {
   const { M, loc, models, afd } = ctx;
-  if (def.pro && !has('pro')) return `<div class="locked-card"><p>${esc(def.title)} is part of the Updraft Pro map collection.</p><button class="btn" data-unlock="maps">Unlock with Pro</button></div>`;
+  if (def.pro && !has('pro')) return `<div class="locked-card"><p>${esc(def.title)} is part of the DopplerIQ Pro map collection.</p><button class="btn" data-unlock="maps">Unlock with Pro</button></div>`;
   if (def.kind === 'image' || w.type === 'custom_image') {
     const src = def.src || w.params?.src; const refresh = def.refresh || 10;
     return `<img class="w-img" loading="lazy" data-src="${esc(src)}" data-refresh="${refresh}" src="${esc(bust(src, refresh))}" alt="${esc(def.title || w.params?.title || '')}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'empty',textContent:'Image unavailable right now'}))">${def.note ? `<div class="muted small">${esc(def.note)}</div>` : ''}`;
   }
   if (w.type === 'custom_link') return `<a class="big-link" href="${esc(w.params?.link)}" target="_blank" rel="noopener">${esc(w.params?.title || w.params?.link)} ↗</a>`;
   if (w.type === 'links') return linksHTML();
-  if ((w.type === 'storms' || w.type === 'spaghetti') && !has('plus')) return `<div class="locked-card"><p>Live hurricane tracking, forecast cones and spaghetti model plots are part of Updraft Plus.</p><button class="btn" data-unlock="hurricanes">Unlock with Plus</button></div>`;
+  if ((w.type === 'storms' || w.type === 'spaghetti') && !has('plus')) return `<div class="locked-card"><p>Live hurricane tracking, forecast cones and spaghetti model plots are part of DopplerIQ Plus.</p><button class="btn" data-unlock="hurricanes">Unlock with Plus</button></div>`;
   if (w.type === 'storms') return stormsHTML(ctx.storms);
   if (w.type === 'spaghetti') return spaghettiHTML(ctx.storms);
   if (w.type === 'models_links') return modelLinksHTML();
   if (w.type === 'scales') return scalesHTML();
   if (w.type === 'marine_links') return marineHTML();
-  if (w.type === 'doppler') return has('pro') ? `<div class="site-ctl"><select data-dsite="${w.id}"><option>Loading radar sites…</option></select><div class="seg small"><button data-dprod="N0B" data-w="${w.id}" class="${(w.params?.prod || 'N0B') === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-dprod="N0S" data-w="${w.id}" class="${w.params?.prod === 'N0S' ? 'on' : ''}">Velocity</button></div></div><div class="dop-map" data-dop="${w.id}"></div><div class="dop-bar"><button class="w-btn" data-dplay="${w.id}">❚❚</button><span class="dop-time" data-dtime="${w.id}">Loading scans…</span><button class="w-btn" data-dreset="${w.id}" title="Back to the default view">Reset view</button><span class="muted small">Click the map, then scroll to zoom · tap a radar dot to switch</span></div>` : `<div class="locked-card"><p>Your own Doppler radar: pick any of the 159 NEXRAD sites and loop its reflectivity or storm-relative velocity on a live map. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
-  if (w.type === 'site_loop') return has('pro') ? siteLoopHTML(w) : `<div class="locked-card"><p>Pick any of the 159 NEXRAD radars and watch its reflectivity or velocity loop. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
+  if (w.type === 'doppler') return has('pro') ? `<div class="site-ctl"><select data-dsite="${w.id}"><option>Loading radar sites…</option></select><div class="seg small"><button data-dprod="N0B" data-w="${w.id}" class="${(w.params?.prod || 'N0B') === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-dprod="N0S" data-w="${w.id}" class="${w.params?.prod === 'N0S' ? 'on' : ''}">Velocity</button></div></div><div class="dop-map" data-dop="${w.id}"></div><div class="dop-bar"><button class="w-btn" data-dplay="${w.id}">❚❚</button><span class="dop-time" data-dtime="${w.id}">Loading scans…</span><button class="w-btn" data-dreset="${w.id}" title="Back to the default view">Reset view</button><span class="muted small">Click the map, then scroll to zoom · tap a radar dot to switch</span></div>` : `<div class="locked-card"><p>Your own Doppler radar: pick any of the 159 NEXRAD sites and loop its reflectivity or storm-relative velocity on a live map. Part of DopplerIQ Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
+  if (w.type === 'site_loop') return has('pro') ? siteLoopHTML(w) : `<div class="locked-card"><p>Pick any of the 159 NEXRAD radars and watch its reflectivity or velocity loop. Part of DopplerIQ Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
   if (w.type === 'marine') return '<div data-marine></div>';
   if (!M) return '<div class="empty">Loading…</div>';
@@ -512,7 +512,7 @@ function onGridClick(e) {
   if (dp) { const w = layout.find((x) => x.id === dp.dataset.w); if (w) setDoppler(w, { prod: dp.dataset.dprod }); return; }
   const sp = e.target.closest('[data-sprod]');
   if (sp) { const w = layout.find((x) => x.id === sp.dataset.w); if (w) { w.params = { ...(w.params || {}), prod: sp.dataset.sprod }; save(); render(); } return; }
-  const un = e.target.closest('[data-unlock]'); if (un) { openPricing(un.dataset.unlock === 'site' ? 'Doppler radar sites are part of Updraft Pro.' : un.dataset.unlock === 'maps' ? 'The full map collection is part of Updraft Pro.' : 'The hurricane tracker is part of Updraft Plus.'); return; }
+  const un = e.target.closest('[data-unlock]'); if (un) { openPricing(un.dataset.unlock === 'site' ? 'Doppler radar sites are part of DopplerIQ Pro.' : un.dataset.unlock === 'maps' ? 'The full map collection is part of DopplerIQ Pro.' : 'The hurricane tracker is part of DopplerIQ Plus.'); return; }
   const b = e.target.closest('[data-act]'); const wEl = e.target.closest('.widget');
   if (b && wEl) {
     const w = layout.find((x) => x.id === wEl.dataset.id);
@@ -542,7 +542,7 @@ function openCatalog() {
   window.dispatchEvent(new CustomEvent('modal', { detail: { title: 'Add a widget', html } }));
   $$('[data-add]').forEach((b) => b.onclick = () => {
     const type = b.dataset.add, d = WIDGETS[type];
-    if ((d.pro || type === 'doppler' || type === 'site_loop' || type === 'marine') && !has('pro')) { window.dispatchEvent(new CustomEvent('modal-close')); openPricing(`${d.title.replace(' (Pro)', '')} is part of Updraft Pro.`); return; }
+    if ((d.pro || type === 'doppler' || type === 'site_loop' || type === 'marine') && !has('pro')) { window.dispatchEvent(new CustomEvent('modal-close')); openPricing(`${d.title.replace(' (Pro)', '')} is part of DopplerIQ Pro.`); return; }
     if (d.kind === 'custom') {
       $('#customForm').hidden = false; $('#cfSrcL').hidden = type === 'custom_link'; $('#customForm').scrollIntoView({ behavior: 'smooth' });
       $('#cfSave').onclick = () => {

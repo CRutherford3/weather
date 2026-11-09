@@ -1,8 +1,8 @@
 {
-  "name": "updraft-weather",
+  "name": "doppleriq-weather",
   "private": true,
   "type": "module",
-  "description": "Updraft weather site. Static files in public/, Netlify Functions in netlify/functions/.",
+  "description": "DopplerIQ weather site. Static files in public/, Netlify Functions in netlify/functions/.",
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
     "@netlify/functions": "^2.8.2",

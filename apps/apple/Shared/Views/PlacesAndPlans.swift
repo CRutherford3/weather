@@ -102,7 +102,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Plan") {
-                Button { showPlans = true } label: { LabeledContent("Updraft \(store.effectivePlan.name)", value: "Plans") }
+                Button { showPlans = true } label: { LabeledContent("DopplerIQ \(store.effectivePlan.name)", value: "Plans") }
                 #if DEBUG
                 Picker("Preview plan (testing)", selection: Binding(get: { store.previewPlan ?? store.plan }, set: { store.previewPlan = $0 })) {
                     ForEach(Plan.allCases, id: \.self) { Text($0.name).tag($0) }
@@ -139,7 +139,7 @@ struct AdBanner: View {
         Button { showPlans = true } label: {
             VStack(spacing: 2) {
                 Text("ADVERTISEMENT").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-                Text("Go ad-free with Updraft Plus").font(.subheadline.bold())
+                Text("Go ad-free with DopplerIQ Plus").font(.subheadline.bold())
                 if kind == .inline { Text("Every map layer, no ads. $2.99/mo").font(.caption).foregroundStyle(.secondary) }
             }
             .frame(maxWidth: .infinity, minHeight: kind == .banner ? 50 : 90)

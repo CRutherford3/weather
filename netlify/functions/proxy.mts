@@ -37,7 +37,7 @@ export default async (req: Request) => {
     const upstream = await fetch(url, {
       headers: {
         // NWS asks API users to identify their app
-        "User-Agent": "UpdraftWeather/1.0 (github.com/CRutherford3/weather)",
+        "User-Agent": "DopplerIQWeather/1.0 (github.com/CRutherford3/weather)",
         Accept: req.headers.get("accept") || "application/json, application/geo+json, */*",
       },
       signal: AbortSignal.timeout(20000),

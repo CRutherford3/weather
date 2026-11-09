@@ -1,4 +1,4 @@
-# Updraft for iPhone, iPad and Mac
+# DopplerIQ for iPhone, iPad and Mac
 
 One universal SwiftUI app. iPhone gets the MyRadar-style tabs; iPad and Mac get the pro workspace
 (sidebar, map with forecast panel, map collections). It ships as one App Store listing with
@@ -34,8 +34,8 @@ If Xcode shows a build error, copy the error text and send it to me.
 ## 2. App Store Connect (once, before submitting)
 
 1. https://appstoreconnect.apple.com > **Apps** > **+** > New App. Platforms: **iOS** and **macOS**.
-   Bundle ID: `io.dialcheck.weather`. Name: Updraft (or whatever name you settle on).
-2. **Subscriptions** > create a subscription group "Updraft" with two auto-renewing products:
+   Bundle ID: `io.dialcheck.weather`. Name: DopplerIQ.
+2. **Subscriptions** > create a subscription group "DopplerIQ" with two auto-renewing products:
    - `io.dialcheck.weather.plus.monthly`, 1 month, $2.99
    - `io.dialcheck.weather.pro.monthly`, 1 month, $9.99 (Pro should be the higher level in the group)
 3. App Privacy: the app collects **coarse location** (not linked to you, not used for tracking). Once ads are added,

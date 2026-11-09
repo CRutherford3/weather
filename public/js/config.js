@@ -1,5 +1,5 @@
 // Central settings. Change APP_NAME here to rename the whole site.
-export const APP_NAME = 'Updraft';
+export const APP_NAME = 'DopplerIQ';
 export const APP_TAGLINE = 'Radar, forecasts and severe weather';
 
 // Default location when the browser location is unavailable.

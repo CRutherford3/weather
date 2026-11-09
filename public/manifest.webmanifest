@@ -1,6 +1,6 @@
 {
-  "name": "Updraft Radar",
-  "short_name": "Updraft",
+  "name": "DopplerIQ Radar",
+  "short_name": "DopplerIQ",
   "description": "Live radar, severe weather alerts, official forecasts and a customizable weather dashboard.",
   "start_url": "/#radar",
   "display": "standalone",
