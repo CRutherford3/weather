@@ -23,3 +23,7 @@
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+[functions]
+  # h5wasm ships a WebAssembly build that must not be bundled
+  external_node_modules = ["h5wasm"]

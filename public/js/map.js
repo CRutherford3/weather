@@ -302,7 +302,36 @@ ADD.sat = async () => {
 const firstRadarOr = () => (R.frames[0] && map.getLayer(R.frames[0].id) ? R.frames[0].id : beforeId());
 // Lightning strike density, last 15 minutes (NOAA nowCOAST / NWS Ocean Prediction Center)
 const WMS = (base, layer, ver = '1.3.0') => `${base}?SERVICE=WMS&VERSION=${ver}&REQUEST=GetMap&LAYERS=${layer}&STYLES=&FORMAT=image/png&TRANSPARENT=true&${ver === '1.3.0' ? 'CRS' : 'SRS'}=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}`;
-ADD.lightning = async () => raster('lightning', `${WMS('https://nowcoast.noaa.gov/geoserver/observations/lightning_detection/ows', 'ldn_lightning_strike_density')}&_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.9, maxzoom: 10 });
+// Lightning: strike density shading (NOAA nowCOAST) plus individual flashes from the GOES-19 lightning mapper
+// (via /api/lightning). Bolts = last 5 minutes, then dots fade from orange to red until 30 minutes old.
+function boltImage() {
+  if (map.hasImage('bolt')) return;
+  const c = document.createElement('canvas'); c.width = c.height = 40; const g = c.getContext('2d');
+  g.beginPath(); g.moveTo(23, 2); g.lineTo(8, 22); g.lineTo(18, 22); g.lineTo(14, 38); g.lineTo(32, 15); g.lineTo(21, 15); g.lineTo(27, 2); g.closePath();
+  g.fillStyle = '#fde047'; g.strokeStyle = '#1e1b4b'; g.lineWidth = 2.5; g.lineJoin = 'round'; g.stroke(); g.fill();
+  map.addImage('bolt', g.getImageData(0, 0, 40, 40), { pixelRatio: 2 });
+}
+ADD.lightning = async () => {
+  const dens = raster('lightning', `${WMS('https://nowcoast.noaa.gov/geoserver/observations/lightning_detection/ows', 'ldn_lightning_strike_density')}&_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.55, maxzoom: 10 });
+  boltImage();
+  map.addSource('strikes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'strikes-old', type: 'circle', source: 'strikes', filter: ['>=', ['get', 'age'], 5],
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 1.6, 8, 3.5], 'circle-color': ['interpolate', ['linear'], ['get', 'age'], 5, '#fb923c', 15, '#ef4444', 30, '#7f1d1d'], 'circle-opacity': ['interpolate', ['linear'], ['get', 'age'], 5, 0.95, 30, 0.35] } });
+  map.addLayer({ id: 'strikes-new', type: 'symbol', source: 'strikes', filter: ['<', ['get', 'age'], 5],
+    layout: { 'icon-image': 'bolt', 'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.55, 8, 1], 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+  let alive = true;
+  const load = async () => {
+    try {
+      const j = await getData('/api/lightning', { noProxy: true, timeout: 30000 });
+      if (!alive || !map.getSource('strikes')) return;
+      const now = Date.now();
+      map.getSource('strikes').setData({ type: 'FeatureCollection', features: j.f.map(([lon, lat, t]) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: { age: (now - t) / 60e3 } })) });
+    } catch (e) { console.warn('lightning strikes', e); }
+  };
+  load();
+  const timer = setInterval(load, 60e3);
+  return { remove: () => { alive = false; clearInterval(timer); dens.remove(); rm(['strikes-new', 'strikes-old'], ['strikes']); } };
+};
 ADD.rain = async () => {
   const layer = { '1h': 'q2-n1p-900913', '24h': 'q2-p24h-900913', '72h': 'q2-p72h-900913' }[S.rain] || 'q2-p24h-900913';
   return raster('rain', `${IEM}/${layer}/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 600e3)}`, { opacity: 0.7, maxzoom: 10, before: firstRadarOr() });
