@@ -1,6 +1,6 @@
 import { APP_NAME, DEFAULT_LOC, alertColor } from './config.js';
 import { store, units, $, $$, esc, debounce, toast, fmtT, fmtW, compass, icon, timeAgo, wx, tempColor, U, openSheet, closeSheet, dayName, hourLabel } from './util.js';
-import { geocode, reverseGeocode, loadPoint, loadModels, loadDiscussion, placesNow } from './api.js';
+import { geocode, reverseGeocode, loadPoint, loadModels, loadDiscussion, placesNow, cardPoint } from './api.js';
 import * as F from './forecast.js';
 import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
@@ -61,7 +61,7 @@ function setLocation(loc, { fly = true, auto = false } = {}) {
   if (!auto) userPicked = true;
   // picking a place by hand stops "follow my location" so GPS doesn't jump it back
   if (!auto && !loc.gps && watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; updateLock(); toast('Stopped following your location'); }
-  state.loc = loc; store.set('loc', loc);
+  state.loc = loc; store.set('loc', loc); state.center = null; cardTok++;
   state.recent = [loc, ...state.recent.filter((r) => r.name !== loc.name)].slice(0, 6); store.set('recent', state.recent);
   $('#locName').textContent = loc.name; $('#q').value = '';
   updateFavBtn();
@@ -127,6 +127,7 @@ function updateLock() { $('#wxLock')?.classList.toggle('on', watchId != null); }
 function toggleFollow() {
   if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; updateLock(); toast('Stopped following your location'); return; }
   if (!navigator.geolocation) return toast('Location is not available in this browser');
+  state.center = null; cardTok++; renderCard();
   watchId = navigator.geolocation.watchPosition(async (p) => {
     const { latitude: lat, longitude: lon } = p.coords;
     if (!state.loc?.gps || !near(state.loc, { lat, lon })) setLocation({ lat, lon, name: await reverseGeocode(lat, lon), gps: true }, { auto: true });
@@ -220,7 +221,7 @@ function renderAll() {
   const M = state.M; if (!M) return;
   const loc = state.loc;
   const c = M.current;
-  $('#wxCard').innerHTML = wxCardHTML(M, loc); wireCard();
+  renderCard();
   // forecast page
   $('#fcHero').innerHTML = F.heroHTML(M, loc);
   $('#fcAlerts').innerHTML = F.alertsHTML(M);
@@ -243,8 +244,41 @@ function renderAll() {
   document.title = `${fmtT(c.temp)} ${loc.name} · ${APP_NAME}`;
   updateDashboard({ M, loc });
 }
+// ---------- the radar card follows the map crosshair ----------
+let cardTok = 0, centerTimer;
+function onCenter(c) {
+  if (watchId != null || !state.loc) return; // following GPS keeps the card on you
+  clearTimeout(centerTimer);
+  const home = state.loc;
+  if (Math.abs(c.lat - home.lat) < 0.03 && Math.abs(c.lng - home.lon) < 0.03) { if (state.center) { state.center = null; cardTok++; renderCard(); } return; }
+  centerTimer = setTimeout(() => loadCenter(c.lat, c.lng), 400);
+}
+async function loadCenter(lat, lon) {
+  const tok = ++cardTok;
+  $('#wxCard').classList.add('busy');
+  try {
+    const [j, name] = await Promise.all([cardPoint(lat, lon), reverseGeocode(lat, lon).catch(() => '')]);
+    if (tok !== cardTok) return;
+    state.center = { loc: { lat, lon, name: name || `${lat.toFixed(2)}, ${lon.toFixed(2)}` }, M: miniModel(j) };
+    renderCard();
+  } catch (e) { console.warn('center card', e); } finally { if (tok === cardTok) $('#wxCard').classList.remove('busy'); }
+}
+function miniModel(j) {
+  const c = j.current, w = wx(c.weather_code, c.is_day);
+  return {
+    current: { temp: c.temperature_2m, icon: w.icon, text: w.text },
+    hours: j.hourly.time.map((t, i) => ({ time: t, temp: j.hourly.temperature_2m[i] })),
+    days: j.daily.time.map((t, i) => ({ date: t, hi: j.daily.temperature_2m_max[i], lo: j.daily.temperature_2m_min[i], pop: j.daily.precipitation_probability_max[i], icon: wx(j.daily.weather_code[i], 1).icon })),
+  };
+}
+function renderCard() {
+  const v = state.center || (state.M && { loc: state.loc, M: state.M });
+  if (!v) return;
+  $('#wxCard').innerHTML = wxCardHTML(v.M, v.loc, !!state.center); wireCard();
+}
+
 // MyRadar-style header card: temperature ring, next high/low, rain chance, next two days
-function wxCardHTML(M, loc) {
+function wxCardHTML(M, loc, away = false) {
   const c = M.current, hs = M.hours.slice(0, 24);
   let hiH = hs[0], loH = hs[0];
   for (const h of hs) { if (h.temp > hiH.temp) hiH = h; if (h.temp < loH.temp) loH = h; }
@@ -260,8 +294,10 @@ function wxCardHTML(M, loc) {
   const pill = (h, v) => `<div class="hl"><span style="background:${tempColor(v)}">${fmtT(v)}</span><small>${hourLabel(h.time)}</small></div>`;
   const days = [1, 2].map((i) => { const d = M.days[i]; if (!d) return ''; return `<div class="wx-day"><b>${dayName(d.date).toUpperCase()}</b>${icon(d.icon, 40)}<span>${fmtT(d.hi)} <em>${fmtT(d.lo)}</em></span><i style="background:linear-gradient(90deg,${tempColor(d.lo)},${tempColor(d.hi)})"></i></div>`; }).join('');
   const lockSvg = '<svg width="20" height="22" viewBox="0 0 20 22"><rect x="2" y="10" width="16" height="11" rx="2.5" fill="currentColor"/><path d="M5.5 10V6.5a4.5 4.5 0 0 1 9 0' + (watchId != null ? 'V10' : '') + '" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>';
-  return `<div class="wx-top"><button class="wx-ic${watchId != null ? ' on' : ''}" id="wxLock" title="Follow my location">${lockSvg}</button>
-      <button class="wx-loc" id="wxLoc" title="Search places"><span>${esc(loc.name)}</span><span class="wx-mini">${fmtT(c.temp)} ${icon(c.icon, 22)}</span></button>
+  const homeSvg = '<svg width="22" height="22" viewBox="0 0 24 24"><path d="M3 11.5L12 4l9 7.5M5.5 9.8V20h13V9.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+  const xh = '<svg class="wx-xh" width="14" height="14" viewBox="0 0 24 24"><path d="M12 2v7M12 15v7M2 12h7M15 12h7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
+  return `<div class="wx-top">${away ? `<button class="wx-ic" id="wxHome" title="Back to ${esc(state.loc?.name || 'my location')}">${homeSvg}</button>` : `<button class="wx-ic${watchId != null ? ' on' : ''}" id="wxLock" title="Follow my location">${lockSvg}</button>`}
+      <button class="wx-loc" id="wxLoc" title="${away ? 'Weather at the crosshair' : 'Search places'}"><span>${away ? xh : ''}${esc(loc.name)}</span><span class="wx-mini">${fmtT(c.temp)} ${icon(c.icon, 22)}</span></button>
       <button class="wx-ic" id="wxPin" title="My places"><svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 25S2 15 2 9.5a9 9 0 0 1 18 0C20 15 11 25 11 25z" fill="currentColor"/><path d="M11 4.8l1.5 3.1 3.4.5-2.5 2.4.6 3.4-3-1.6-3 1.6.6-3.4-2.5-2.4 3.4-.5z" fill="var(--card)"/></svg></button></div>
     <div class="wx-body">
       <a class="wx-ring" href="#forecast" title="Full forecast">${ring}<div class="wx-now"><b>${fmtT(c.temp)}</b><span>now</span></div></a>
@@ -272,7 +308,10 @@ function wxCardHTML(M, loc) {
     <button class="wx-grab" id="wxGrab" aria-label="Show or hide details"><span></span></button>`;
 }
 function wireCard() {
-  $('#wxLock').onclick = toggleFollow;
+  if ($('#wxLock')) $('#wxLock').onclick = toggleFollow;
+  if ($('#wxHome')) $('#wxHome').onclick = () => { state.center = null; cardTok++; renderCard(); Map.flyTo(state.loc); };
+  // away from home: tapping the card opens the full forecast for the crosshair spot
+  if (state.center) $$('#wxCard .wx-ring, #wxCard .wx-cond').forEach((a) => a.onclick = (e) => { e.preventDefault(); const l = state.center.loc; pickPoint({ lat: l.lat, lon: l.lon }, l.name); });
   $('#wxPin').onclick = openPlaces;
   $('#wxLoc').onclick = () => { $('#q').focus(); };
   $('#wxGrab').onclick = () => { $('#wxCard').classList.toggle('collapsed'); store.set('cardCollapsed', $('#wxCard').classList.contains('collapsed')); };
@@ -384,7 +423,7 @@ async function boot() {
   // wordmark is styled in index.html; APP_NAME drives titles
   applyUnits();
   const start = state.loc || DEFAULT_LOC;
-  Map.initMap('map', start, effTheme, { onPick: pickPoint, onSavePlace: savePlace, getPlaces: () => state.favs });
+  Map.initMap('map', start, effTheme, { onPick: pickPoint, onSavePlace: savePlace, getPlaces: () => state.favs, onCenter });
   applyTheme();
   document.body.dataset.plan = plan();
   wireTools();

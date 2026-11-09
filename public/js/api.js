@@ -96,6 +96,11 @@ export async function quickPoint(lat, lon) {
   return getData(`${OM}?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&forecast_days=2&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max`);
 }
 
+// Light forecast for the radar card at the map crosshair: now, next 24 hours, next 3 days
+export async function cardPoint(lat, lon) {
+  return getData(`${OM}?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&forecast_days=3&forecast_hours=25&current=temperature_2m,weather_code,is_day&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code`, { cache: 600e3 });
+}
+
 // Grid of current conditions for the map temperature / wind layer
 export async function gridPoints(lats, lons) {
   const j = await getData(`${OM}?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,is_day`);

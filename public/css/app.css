@@ -563,3 +563,7 @@ table.scale { width: 100%; border-collapse: collapse; font-size: 12.5px; } .scal
   .dash-bar { flex-wrap: wrap; gap: 8px; } .dash-actions { width: 100%; justify-content: flex-end; }
   .fc-grid .ad-row .ad-banner { min-height: 60px; }
 }
+/* card following the crosshair */
+.wx-card { transition: opacity .2s; } .wx-card.busy { opacity: .72; }
+.wx-xh { vertical-align: -1px; margin-right: 6px; color: var(--accent); }
+.wx-card #wxHome { color: var(--accent); }

@@ -73,6 +73,7 @@ export function initMap(el, loc, getTheme, handlers) {
   map.touchZoomRotate.disableRotation();
   map.on('style.load', onStyleLoad);
   map.on('click', onClick);
+  map.on('moveend', (e) => H.onCenter?.(map.getCenter(), !!e.originalEvent || !!e.userMove));
   map.on('contextmenu', (e) => quickForecast(e.lngLat));
   let pressT; // long press on touch
   map.on('touchstart', (e) => { if (e.originalEvent.touches.length !== 1) return; pressT = setTimeout(() => quickForecast(e.lngLat), 550); });
