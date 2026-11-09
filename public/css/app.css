@@ -597,3 +597,6 @@ body.popup-open .crosshair { opacity: 0; }
 @media (max-width: 760px) { .dop-map { height: 300px; } .dop-bar .muted { display: none; } }
 /* the 16-day list spans two rows so the next widget fills the space beside it */
 @media (min-width: 761px) { .dash-grid .w-tall { grid-row: span 2; } }
+.dop-map .leaflet-control-zoom a { width: 34px; height: 34px; line-height: 34px; font-size: 20px; background: var(--card); color: var(--text); border-color: var(--line); }
+.dop-map.zooming { outline: 2px solid var(--brand); outline-offset: -2px; }
+.dop-bar .w-btn { width: auto; padding: 0 10px; }

@@ -262,7 +262,7 @@ function bodyHTML(w, def) {
   if (w.type === 'models_links') return modelLinksHTML();
   if (w.type === 'scales') return scalesHTML();
   if (w.type === 'marine_links') return marineHTML();
-  if (w.type === 'doppler') return has('pro') ? `<div class="site-ctl"><select data-dsite="${w.id}"><option>Loading radar sites…</option></select><div class="seg small"><button data-dprod="N0B" data-w="${w.id}" class="${(w.params?.prod || 'N0B') === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-dprod="N0S" data-w="${w.id}" class="${w.params?.prod === 'N0S' ? 'on' : ''}">Velocity</button></div></div><div class="dop-map" data-dop="${w.id}"></div><div class="dop-bar"><button class="w-btn" data-dplay="${w.id}">❚❚</button><span class="dop-time" data-dtime="${w.id}">Loading scans…</span><span class="muted small">Tap a radar dot to switch</span></div>` : `<div class="locked-card"><p>Your own Doppler radar: pick any of the 159 NEXRAD sites and loop its reflectivity or storm-relative velocity on a live map. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
+  if (w.type === 'doppler') return has('pro') ? `<div class="site-ctl"><select data-dsite="${w.id}"><option>Loading radar sites…</option></select><div class="seg small"><button data-dprod="N0B" data-w="${w.id}" class="${(w.params?.prod || 'N0B') === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-dprod="N0S" data-w="${w.id}" class="${w.params?.prod === 'N0S' ? 'on' : ''}">Velocity</button></div></div><div class="dop-map" data-dop="${w.id}"></div><div class="dop-bar"><button class="w-btn" data-dplay="${w.id}">❚❚</button><span class="dop-time" data-dtime="${w.id}">Loading scans…</span><button class="w-btn" data-dreset="${w.id}" title="Back to the default view">Reset view</button><span class="muted small">Click the map, then scroll to zoom · tap a radar dot to switch</span></div>` : `<div class="locked-card"><p>Your own Doppler radar: pick any of the 159 NEXRAD sites and loop its reflectivity or storm-relative velocity on a live map. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'site_loop') return has('pro') ? siteLoopHTML(w) : `<div class="locked-card"><p>Pick any of the 159 NEXRAD radars and watch its reflectivity or velocity loop. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
   if (!M) return '<div class="empty">Loading…</div>';
@@ -399,8 +399,12 @@ async function mountDoppler(w) {
   const d = (x) => Math.round(Math.hypot(x.lat - loc.lat, (x.lon - loc.lon) * Math.cos(loc.lat * Math.PI / 180)) * 69);
   const sel = $(`select[data-dsite="${w.id}"]`);
   if (sel) sel.innerHTML = [...list].sort((a, b) => d(a) - d(b)).map((x) => `<option value="${x.code}" ${x.code === site.code ? 'selected' : ''}>${x.id} · ${esc(x.name)} (${d(x)} mi)</option>`).join('');
-  const m = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: false }).setView([site.lat, site.lon], 7);
+  const m = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: false, minZoom: 4, maxZoom: 12 }).setView([site.lat, site.lon], 7);
   miniMaps.push(m);
+  // click into the map, then the scroll wheel zooms; leaving the map gives scrolling back to the page
+  m.on('click', () => { m.scrollWheelZoom.enable(); el.classList.add('zooming'); });
+  m.on('mouseout', () => { m.scrollWheelZoom.disable(); el.classList.remove('zooming'); });
+  const rb = $(`[data-dreset="${w.id}"]`); if (rb) rb.onclick = () => m.setView([site.lat, site.lon], 7);
   const dark = document.documentElement.dataset.theme !== 'light';
   L.tileLayer(dark ? TILES.dark : TILES.light, { maxNativeZoom: 16 }).addTo(m);
   const IEMT = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
