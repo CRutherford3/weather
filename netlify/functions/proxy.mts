@@ -18,6 +18,8 @@ const ALLOWED = new Set([
   "services5.arcgis.com",
   "api.wheretheiss.at",
   "tiles.openfreemap.org",
+  "router.project-osrm.org",
+  "developer.nrel.gov",
 ]);
 
 export default async (req: Request) => {

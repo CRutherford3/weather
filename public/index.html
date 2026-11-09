@@ -58,6 +58,8 @@
 
       <div id="wxCard" class="wx-card"><div class="empty">Loading…</div></div>
 
+      <button id="routeChip" class="route-chip" hidden></button>
+      <div class="ad-float" id="radarAd"></div>
       <div class="dock">
         <div class="dock-main">
           <div id="legendBar" class="legend-bar" title="Radar intensity: light to severe"></div>
@@ -73,6 +75,7 @@
           <button id="toolStyle" title="Map style"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Map</span></button>
           <button id="toolLayers" title="Layers"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Layers</span></button>
           <button id="toolPlaces" title="My places"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 22s-7-7.5-7-12a7 7 0 0 1 14 0c0 4.5-7 12-7 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 6.5l1.2 2.5 2.7.4-2 1.9.5 2.7-2.4-1.3-2.4 1.3.5-2.7-2-1.9 2.7-.4z" fill="currentColor"/></svg><span>Places</span></button>
+          <button id="toolRoute" title="Route weather (Pro)"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 17h6.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Route</span></button>
           <button id="toolGlobe" class="d-only" title="Globe view"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Globe</span></button>
           <button id="toolInfo" class="d-only" title="Forecast at crosshair"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Here</span></button>
           <button id="toolForecast" class="m-only" title="Forecast"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 2A3 3 0 0 0 7 18z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Forecast</span></button>
@@ -87,6 +90,7 @@
       <div class="fc-grid">
         <article class="card span-8" id="fcHero"></article>
         <article class="card span-4"><h3>Alerts</h3><div id="fcAlerts" class="alert-list"></div></article>
+        <div class="span-12 ad-row" id="fcAd1"></div>
         <article class="card span-4"><h3>Next 3 hours</h3><div id="fcNowcast"></div></article>
         <article class="card span-8"><h3>Right now</h3><div id="fcDetails"></div></article>
         <article class="card span-12"><h3>Hourly <small class="muted" id="hrSrc"></small></h3><div id="fcHourly"></div></article>
@@ -95,9 +99,12 @@
           <article class="card"><h3>Air quality</h3><div id="fcAqi"></div></article>
           <article class="card"><h3>Sun & moon</h3><div id="fcSun"></div></article>
         </div>
+        <article class="card span-12"><h3>Hail history <span class="tier-badge t-pro">PRO</span> <small class="muted">Hail reported near this location</small></h3><div id="fcHail"></div></article>
+        <div class="span-12 ad-row" id="fcAd2"></div>
         <article class="card span-12"><h3>Model comparison <small class="muted">How different forecast models see the next 7 days</small></h3><div id="fcModels"><div class="empty">Loading…</div></div></article>
         <article class="card span-6"><h3>National Weather Service forecast</h3><div id="fcNws" class="scroll-box"></div></article>
         <article class="card span-6"><h3>Forecaster discussion <small class="muted">The meteorologists' reasoning</small></h3><div id="fcAfd" class="scroll-box"><div class="empty">Loading…</div></div></article>
+        <div class="span-12 ad-row" id="fcAd3"></div>
         <footer class="card span-12 sources"><h3>Where this data comes from</h3><ul id="fcSources"></ul>
           <p class="muted small">Radar: NOAA NEXRAD via Iowa Environmental Mesonet. Satellite: NOAA GOES via NASA GIBS and NESDIS. Alerts, forecasts and observations: National Weather Service. Models and air quality: Open-Meteo. Storm outlooks: SPC, WPC, NHC, CPC. Earthquakes: USGS. Wildfires: NIFC.</p></footer>
       </div>
@@ -107,10 +114,11 @@
     <section id="view-dashboard" class="view scroll" hidden>
       <div id="dashboard">
         <div class="dash-bar">
-          <h2>Dashboard</h2>
+          <div class="dash-pages" id="dashPages"></div>
           <div class="dash-actions">
             <button class="btn ghost" id="dashReset" hidden>Reset</button>
             <button class="btn ghost" id="dashAdd" hidden>+ Add widget</button>
+            <button class="btn ghost" id="dashTpl">Layouts</button>
             <button class="btn" id="dashEdit">Customize</button>
           </div>
         </div>

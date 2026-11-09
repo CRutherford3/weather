@@ -4,6 +4,9 @@ import { geocode, reverseGeocode, loadPoint, loadModels, loadDiscussion, placesN
 import * as F from './forecast.js';
 import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
+import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge } from './plan.js';
+import { initRoute } from './route.js';
+import { getData } from './util.js';
 
 const state = {
   loc: store.get('loc', null),
@@ -53,14 +56,26 @@ function route() {
 window.addEventListener('hashchange', route);
 
 // ---------- location ----------
-function setLocation(loc, { fly = true } = {}) {
+let userPicked = false;
+function setLocation(loc, { fly = true, auto = false } = {}) {
+  if (!auto) userPicked = true;
+  // picking a place by hand stops "follow my location" so GPS doesn't jump it back
+  if (!auto && !loc.gps && watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; updateLock(); toast('Stopped following your location'); }
   state.loc = loc; store.set('loc', loc);
   state.recent = [loc, ...state.recent.filter((r) => r.name !== loc.name)].slice(0, 6); store.set('recent', state.recent);
   $('#locName').textContent = loc.name; $('#q').value = '';
   updateFavBtn();
   Map.setHome(loc); if (fly) Map.flyTo(loc);
-  state.models = null; state.afd = undefined;
+  state.models = null; state.afd = undefined; state.M = null;
+  showLoading(loc);
   refresh();
+}
+// Clear the old place right away so the Forecast tab never shows the previous location
+function showLoading(loc) {
+  const msg = `<div class="empty">Loading ${esc(loc.name)}…</div>`;
+  ['#fcHero', '#fcNowcast', '#fcDetails', '#fcHourly', '#fcDaily', '#fcAqi', '#fcSun', '#fcNws', '#fcModels', '#fcAfd', '#fcHail'].forEach((id) => { const el = $(id); if (el) el.innerHTML = msg; });
+  $('#fcAlerts').innerHTML = ''; $('#alertBanner').hidden = true;
+  updateDashboard({ M: null, loc, models: null, afd: undefined });
 }
 async function pickPoint({ lat, lon }, known) {
   const name = known || await reverseGeocode(lat, lon);
@@ -71,7 +86,8 @@ function geolocate(silent) {
   if (!navigator.geolocation) { if (!silent) toast('Location is not available in this browser'); return Promise.resolve(false); }
   return new Promise((res) => navigator.geolocation.getCurrentPosition(async (p) => {
     const { latitude: lat, longitude: lon } = p.coords;
-    setLocation({ lat, lon, name: await reverseGeocode(lat, lon), gps: true });
+    if (silent && userPicked) return res(false); // user already chose a place; don't override it
+    setLocation({ lat, lon, name: await reverseGeocode(lat, lon), gps: true }, { auto: silent });
     res(true);
   }, () => { if (!silent) toast('Could not get your location. Check location permissions.'); res(false); }, { timeout: 10000, maximumAge: 300000 }));
 }
@@ -113,7 +129,7 @@ function toggleFollow() {
   if (!navigator.geolocation) return toast('Location is not available in this browser');
   watchId = navigator.geolocation.watchPosition(async (p) => {
     const { latitude: lat, longitude: lon } = p.coords;
-    if (!state.loc?.gps || !near(state.loc, { lat, lon })) setLocation({ lat, lon, name: await reverseGeocode(lat, lon), gps: true });
+    if (!state.loc?.gps || !near(state.loc, { lat, lon })) setLocation({ lat, lon, name: await reverseGeocode(lat, lon), gps: true }, { auto: true });
   }, () => { toast('Could not get your location. Check location permissions.'); watchId = null; updateLock(); }, { maximumAge: 60000, timeout: 15000 });
   updateLock(); toast('Following your location');
 }
@@ -142,25 +158,62 @@ $('#q').addEventListener('input', debounce(async (e) => {
 $('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = $('button', results); if (b) b.dispatchEvent(new MouseEvent('mousedown')); } if (e.key === 'Escape') $('#q').blur(); });
 
 // ---------- data ----------
+let refreshTok = 0;
 async function refresh() {
   if (!state.loc) return;
+  const tok = ++refreshTok, loc = state.loc;
   state.loading = true; document.body.classList.add('loading');
   try {
-    const D = await loadPoint(state.loc);
+    const D = await loadPoint(loc);
+    if (tok !== refreshTok || state.loc !== loc) return; // a newer location was picked while this loaded
     state.M = F.buildModel(D);
     state.lastRefresh = Date.now();
     renderAll();
     if (!$('#view-forecast').hidden || !$('#view-dashboard').hidden) loadExtras();
   } catch (e) {
+    if (tok !== refreshTok) return;
     console.error(e); toast('Could not load the forecast. Retrying in a minute.'); setTimeout(refresh, 60e3);
-  } finally { state.loading = false; document.body.classList.remove('loading'); }
+  } finally { if (tok === refreshTok) { state.loading = false; document.body.classList.remove('loading'); } }
 }
 async function loadExtras() {
   if (!state.loc || !state.M) return;
-  if (!state.models) { state.models = []; loadModels(state.loc).then((m) => { state.models = m; $('#fcModels').innerHTML = F.modelsHTML(m); updateDashboard({ models: m }); }).catch(() => { $('#fcModels').innerHTML = '<div class="empty">Model data unavailable right now.</div>'; }); }
-  if (state.afd === undefined && state.M.nws?.office) { state.afd = null; loadDiscussion(state.M.nws.office).then((a) => { state.afd = a; $('#fcAfd').innerHTML = F.afdHTML(a); updateDashboard({ afd: a }); }).catch(() => { $('#fcAfd').innerHTML = F.afdHTML(null); updateDashboard({ afd: null }); }); }
+  const loc = state.loc, same = () => state.loc === loc;
+  if (!state.models) { state.models = []; loadModels(loc).then((m) => { if (!same()) return; state.models = m; $('#fcModels').innerHTML = F.modelsHTML(m); updateDashboard({ models: m }); }).catch(() => { $('#fcModels').innerHTML = '<div class="empty">Model data unavailable right now.</div>'; }); }
+  hailHistory($('#fcHail'));
+  if (state.afd === undefined && state.M.nws?.office) { state.afd = null; loadDiscussion(state.M.nws.office).then((a) => { if (!same()) return; state.afd = a; $('#fcAfd').innerHTML = F.afdHTML(a); updateDashboard({ afd: a }); }).catch(() => { $('#fcAfd').innerHTML = F.afdHTML(null); updateDashboard({ afd: null }); }); }
   else if (!state.M.nws) { $('#fcAfd').innerHTML = F.afdHTML(null); updateDashboard({ afd: null }); }
 }
+
+// ---------- hail history (Pro) ----------
+const hailCache = {};
+async function hailHistory(el) {
+  if (!el || !state.loc) return;
+  const loc = state.loc;
+  if (!can('hailHistory')) {
+    el.innerHTML = `<div class="locked-card"><p>See every hail report within 10 miles of <b>${esc(loc.name)}</b> over the past 5 years: dates, stone sizes and how close they hit. Handy for roof and insurance claims.</p><button class="btn" data-unlock>Unlock with Pro</button></div>`;
+    $('[data-unlock]', el).onclick = () => gate('hailHistory', 'Hail history');
+    return;
+  }
+  const key = `${loc.lat.toFixed(3)},${loc.lon.toFixed(3)}`;
+  el.innerHTML = '<div class="empty">Searching 5 years of storm reports…</div>';
+  try {
+    const dLat = 0.145, dLon = 0.145 / Math.cos(loc.lat * Math.PI / 180);
+    const now = new Date(), sts = new Date(now); sts.setFullYear(now.getFullYear() - 5);
+    const iso = (d) => d.toISOString().slice(0, 16) + 'Z';
+    const j = hailCache[key] || (hailCache[key] = await getData(`https://mesonet.agron.iastate.edu/geojson/lsr.geojson?west=${(loc.lon - dLon).toFixed(3)}&east=${(loc.lon + dLon).toFixed(3)}&south=${(loc.lat - dLat).toFixed(3)}&north=${(loc.lat + dLat).toFixed(3)}&sts=${iso(sts)}&ets=${iso(now)}`, { timeout: 40000 }));
+    if (state.loc !== loc) return;
+    const mi = (a, b) => { const R = 3958.8, t = Math.PI / 180, x = (b[0] - a.lon) * t * Math.cos(a.lat * t), y = (b[1] - a.lat) * t; return Math.sqrt(x * x + y * y) * R; };
+    const rows = j.features.filter((f) => /HAIL/i.test(f.properties.typetext || '')).map((f) => ({ p: f.properties, size: parseFloat(f.properties.magnitude) || 0, d: mi(loc, f.geometry.coordinates), t: new Date(String(f.properties.valid).endsWith('Z') ? f.properties.valid : f.properties.valid + 'Z') }))
+      .filter((r) => r.d <= 10).sort((a, b) => b.t - a.t);
+    if (!rows.length) { el.innerHTML = `<div class="empty ok">✓ No hail reports within 10 miles in the past 5 years.</div>`; return; }
+    const big = rows.reduce((a, b) => (b.size > a.size ? b : a));
+    const days = new Set(rows.map((r) => r.t.toDateString())).size;
+    el.innerHTML = `<div class="hh-sum"><div><b>${rows.length}</b><small>reports</small></div><div><b>${days}</b><small>hail days</small></div><div><b>${big.size.toFixed(2)}"</b><small>largest ${Map.hailName(big.size)}</small></div><div><b>${rows[0].t.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</b><small>most recent</small></div></div>
+      <div class="hh-list">${rows.slice(0, 40).map((r) => `<div class="hh-row"><span class="hh-dot" style="--s:${Math.min(28, 10 + r.size * 5)}px"></span><b>${r.size.toFixed(2)}"</b><span>${r.t.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span><span>${r.d.toFixed(1)} mi · ${esc(r.p.city || '')}</span></div>`).join('')}</div>
+      <p class="muted small">From NWS storm reports (people who saw it and reported it). Radar-estimated hail swaths are coming in a later update.</p>`;
+  } catch (e) { console.warn(e); el.innerHTML = '<div class="empty">Hail history is unavailable right now.</div>'; }
+}
+window.addEventListener('hail-history', (e) => hailHistory(e.detail));
 
 // ---------- rendering ----------
 function renderAll() {
@@ -254,7 +307,7 @@ window.addEventListener('storms', (e) => updateDashboard({ storms: e.detail }));
 
 
 // ---------- settings sheet (MyRadar-style) ----------
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const ATTRIB = [
   ['National Weather Service (NOAA)', 'Forecasts, observations, alerts, radar loops', 'https://www.weather.gov/'],
   ['NOAA NEXRAD via Iowa Environmental Mesonet', 'Radar mosaic, rain totals, GOES and lightning tiles', 'https://mesonet.agron.iastate.edu/'],
@@ -269,6 +322,10 @@ const ATTRIB = [
   ['Where The ISS At?', 'Space station position', 'https://wheretheiss.at/'],
   ['OpenFreeMap / OpenMapTiles / OpenStreetMap contributors', 'Map styles and map data', 'https://openfreemap.org/'],
   ['Esri', 'Satellite basemap imagery', 'https://www.esri.com/'],
+  ['OSRM / OpenStreetMap', 'Driving routes', 'https://project-osrm.org/'],
+  ['U.S. DOE Alternative Fuels Data Center', 'EV charging stations', 'https://afdc.energy.gov/'],
+  ['TomTom', 'Traffic', 'https://developer.tomtom.com/'],
+  ['NOAA SWPC, OPC, CIMSS, Tropical Tidbits', 'Space weather, marine, tropical analysis and spaghetti plots', 'https://www.swpc.noaa.gov/'],
   ['BigDataCloud', 'Place names for your location', 'https://www.bigdatacloud.com/'],
   ['MapLibre GL JS (BSD-3)', 'Map engine', 'https://maplibre.org/'],
   ['Leaflet (BSD-2), SortableJS (MIT)', 'Dashboard mini map and drag to reorder', 'https://leafletjs.com/'],
@@ -279,13 +336,16 @@ function openSettings(view = 'main') {
     return;
   }
   if (view === 'privacy') {
-    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. There are no accounts, ads or tracking.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
+    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. There are no accounts and no tracking by Updraft.</p><p>On the free plan, ads may be shown by Google AdSense, which can use cookies to pick ads. Paid plans have no ads.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
     return;
   }
   const imp = units.system === 'imperial';
   openSheet('Settings', `<div class="set-pad"><div class="seg big" id="setUnits"><button data-v="metric" class="${imp ? '' : 'on'}">Celsius</button><button data-v="imperial" class="${imp ? 'on' : ''}">Fahrenheit</button></div></div>
     <div class="sheet-sub">Appearance</div>
     <div class="set-pad"><div class="seg big" id="setTheme">${['auto', 'dark', 'light'].map((t) => `<button data-v="${t}" class="${state.theme === t ? 'on' : ''}">${t === 'auto' ? 'Auto' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
+    <div class="sheet-sub">Your plan</div>
+    <button class="set-row" id="setPlan"><span><b>Updraft ${TIERS[plan()].name}</b><small>${plan() === 'free' ? 'Go ad-free and unlock every layer' : 'Thanks for supporting Updraft'}</small></span><i class="chev">›</i></button>
+    <div class="set-pad"><small class="muted">Preview plan (testing only, until checkout is connected)</small><div class="seg" id="setPreview">${['free', 'plus', 'pro'].map((t) => `<button data-v="${t}" class="${plan() === t ? 'on' : ''}">${TIERS[t].name}</button>`).join('')}</div></div>
     <div class="sheet-sub">Location</div>
     <div class="lrow"><div class="lrow-main"><span>Follow My Location</span></div><label class="tg"><input type="checkbox" id="setFollow" ${watchId != null ? 'checked' : ''}><span></span></label></div>
     <p class="set-note">Keep the forecast and map centered on you as you move.</p>
@@ -300,6 +360,8 @@ function openSettings(view = 'main') {
     $$('#setUnits button', b).forEach((x) => x.onclick = () => { if (units.system !== x.dataset.v) $('#unitBtn').click(); openSettings(); });
     $$('#setTheme button', b).forEach((x) => x.onclick = () => { state.theme = x.dataset.v; store.set('theme', state.theme); applyTheme(); openSettings(); });
     $('#setFollow', b).onchange = () => toggleFollow();
+    $('#setPlan', b).onclick = () => openPricing();
+    $$('#setPreview button', b).forEach((x) => x.onclick = () => { setPlan(x.dataset.v); toast(`Previewing ${TIERS[x.dataset.v].name}`); openSettings(); });
     $('#setPlaces', b).onclick = openPlaces;
     $('#setAttrib', b).onclick = () => openSettings('attrib');
     $('#setPrivacy', b).onclick = () => openSettings('privacy');
@@ -324,11 +386,17 @@ async function boot() {
   const start = state.loc || DEFAULT_LOC;
   Map.initMap('map', start, effTheme, { onPick: pickPoint, onSavePlace: savePlace, getPlaces: () => state.favs });
   applyTheme();
+  document.body.dataset.plan = plan();
   wireTools();
+  initRoute(() => state.loc);
   initDashboard();
+  ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); });
+  $('#radarAd').innerHTML = adSlot('box');
+  fillAds(document);
+  window.addEventListener('plan', () => { ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#radarAd').innerHTML = adSlot('box'); fillAds(document); Map.applyLayers(); if (state.M) hailHistory($('#fcHail')); });
   route();
   if (state.loc) { $('#locName').textContent = state.loc.name; updateFavBtn(); refresh(); }
-  else { setLocation(DEFAULT_LOC, { fly: false }); geolocate(true); }
+  else { setLocation(DEFAULT_LOC, { fly: false, auto: true }); geolocate(true); }
   setInterval(refresh, 10 * 60e3);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.M && Date.now() - (state.lastRefresh || 0) > 5 * 60e3) refresh(); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});

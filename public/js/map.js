@@ -2,8 +2,10 @@
 // Layers: radar loop, satellite, warnings, fronts, lightning, winds, temps, air quality, rain totals,
 // SPC outlook, mesoscale discussions, storm reports, hurricanes, drought, earthquakes, wildfires, ISS.
 import { alertColor, DBZ_LEGEND } from './config.js';
-import { store, $, $$, esc, U, fmtT, fmtW, compass, toast, tempColor, wx, icon, localTime, aqiInfo, openSheet, closeSheet } from './util.js';
+import { store, getData, $, $$, esc, U, fmtT, fmtW, compass, toast, tempColor, wx, icon, localTime, aqiInfo, openSheet, closeSheet } from './util.js';
 import { feeds, gridPoints, quickPoint, aqGrid } from './api.js';
+import { KEYS } from './config.js';
+import { canLayer, tierOf, badge, gate } from './plan.js';
 
 const ml = window.maplibregl;
 const ESRI = 'https://services.arcgisonline.com/ArcGIS/rest/services';
@@ -27,7 +29,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'),
@@ -35,9 +37,10 @@ export const S = {
   speed: store.get('speed', 450),
   sat: store.get('satType', 'ir'),
   rain: store.get('rainType', '24h'),
+  hail: store.get('hailHours', '72'),
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
-const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); };
+const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); };
 
 export const LAYER_GROUPS = [
   ['Radar & Satellite', [
@@ -45,13 +48,14 @@ export const LAYER_GROUPS = [
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
+    ['hail', 'Hail Map', 'hailOpts'],
   ]],
   ['Conditions', [
     ['fronts', 'Fronts & Pressure'], ['winds', 'Winds (animated)'], ['temps', 'Temperatures'], ['aqi', 'Air Quality'],
   ]],
   ['Tropics', [['tropics', 'Hurricane Tracker']]],
   ['More', [
-    ['places', 'My Places'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
+    ['places', 'My Places'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
   ]],
 ];
 
@@ -89,6 +93,7 @@ function onStyleLoad() {
   // Style switch wipes custom layers; markers survive, so remove everything and re-add
   for (const id of Object.keys(active)) { try { active[id]?.remove?.(); } catch { /* gone */ } delete active[id]; }
   addFrontImages();
+  if (routeData) setTimeout(() => drawRoute(...routeData, true), 0);
   if ((S.style === 'auto' ? themeFn() : S.style) === 'dark') brightenDark();
   // Let the base map paint first, then bring in radar and the other layers
   let started = false;
@@ -130,7 +135,7 @@ const ADD = {};
 export function applyLayers() {
   if (!styleReady) return;
   for (const id of Object.keys(DEFAULT_LAYERS)) {
-    const on = S.layers[id];
+    const on = S.layers[id] && canLayer(id);
     if (on && !active[id]) enable(id);
     else if (!on && active[id]) disable(id);
   }
@@ -314,6 +319,62 @@ ADD.lsr = async () => {
   return geo('lsr', j, [{ type: 'circle', top: true, paint: { 'circle-radius': 6, 'circle-color': ['get', 'c'], 'circle-stroke-color': '#000', 'circle-stroke-width': 1 } }],
     (f, ll) => { const p = f.properties; popup(ll, `<b>${esc(p.typetext)}</b> ${p.magnitude ? esc(p.magnitude) + (p.unit ? ' ' + esc(p.unit) : '') : ''}<br>${esc(p.city)}, ${esc(p.st || p.state || '')}<br><small>${p.valid ? new Date(String(p.valid).endsWith('Z') ? p.valid : p.valid + 'Z').toLocaleString() : ''}</small><p>${esc(p.remark || '')}</p>`); });
 };
+
+// ================= Hail map: storm reports sized by stone size + SPC hail risk =================
+const hailColor = (inch) => (inch >= 2.75 ? '#d946ef' : inch >= 2 ? '#ef4444' : inch >= 1.5 ? '#f97316' : inch >= 1 ? '#facc15' : '#a3e635');
+ADD.hail = async () => {
+  const [rep, risk] = await Promise.allSettled([
+    getData(`https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=${S.hail}`, { cache: 300e3 }),
+    getData('https://www.spc.noaa.gov/products/outlook/day1otlk_hail.lyr.geojson', { proxyFirst: true, cache: 900e3 }),
+  ]);
+  const hs = [];
+  if (risk.status === 'fulfilled' && risk.value?.features?.length) hs.push(geo('hailrisk', risk.value, [
+    { type: 'fill', paint: { 'fill-color': ['coalesce', ['get', 'fill'], '#facc15'], 'fill-opacity': 0.18 } },
+    { type: 'line', paint: { 'line-color': ['coalesce', ['get', 'stroke'], '#facc15'], 'line-width': 1.2, 'line-dasharray': [2, 1] } },
+  ], (f, ll) => popup(ll, `<b>SPC hail risk today: ${esc(f.properties.LABEL2 || f.properties.LABEL || '')}</b><br><small>Chance of 1 inch or larger hail within 25 miles of a point</small>`)));
+  const feats = rep.status === 'fulfilled' ? rep.value.features.filter((f) => /HAIL/i.test(f.properties.typetext || '')) : [];
+  feats.forEach((f) => { const m = parseFloat(f.properties.magnitude) || 0.75; f.properties.m = m; f.properties.c = hailColor(m); });
+  if (!feats.length) toast(`No hail reports in the last ${S.hail === '24' ? 'day' : S.hail === '72' ? '3 days' : 'week'}`);
+  hs.push(geo('hail', { type: 'FeatureCollection', features: feats }, [
+    { type: 'circle', top: true, paint: { 'circle-radius': ['interpolate', ['linear'], ['get', 'm'], 0.5, 4, 1, 6, 2, 10, 4, 16], 'circle-color': ['get', 'c'], 'circle-opacity': 0.9, 'circle-stroke-color': '#111', 'circle-stroke-width': 1 } },
+    { type: 'symbol', top: true, minzoom: 7, layout: { 'text-field': ['concat', ['to-string', ['get', 'm']], '"'], 'text-size': 11, 'text-offset': [0, 1.3], 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#fff', 'text-halo-color': '#000', 'text-halo-width': 1.4 } },
+  ], (f, ll) => { const p = f.properties; popup(ll, `<b>Hail ${esc(p.m)} in</b> ${hailName(p.m)}<br>${esc(p.city)}, ${esc(p.st || p.state || '')}<br><small>${p.valid ? new Date(String(p.valid).endsWith('Z') ? p.valid : p.valid + 'Z').toLocaleString() : ''} · ${esc(p.source || '')}</small><p>${esc(p.remark || '')}</p>`); }));
+  return { remove: () => hs.forEach((h) => h.remove()) };
+};
+export const hailName = (i) => (i >= 4 ? '(softball)' : i >= 2.75 ? '(baseball)' : i >= 2.5 ? '(tennis ball)' : i >= 1.75 ? '(golf ball)' : i >= 1.5 ? '(ping pong ball)' : i >= 1.25 ? '(half dollar)' : i >= 1 ? '(quarter)' : i >= 0.88 ? '(nickel)' : '(pea to penny)');
+
+// ================= Traffic (TomTom flow + incidents, key required) =================
+ADD.traffic = async () => {
+  if (!KEYS.tomtom) throw new Error('no key');
+  const bust = Math.floor(Date.now() / 120e3);
+  map.addSource('traffic', { type: 'raster', tiles: [`https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${KEYS.tomtom}&thickness=6&_=${bust}`], tileSize: 256, minzoom: 5, maxzoom: 18 });
+  map.addLayer({ id: 'traffic', type: 'raster', source: 'traffic', minzoom: 5, paint: { 'raster-opacity': 0.9 } }, beforeId());
+  map.addSource('trafficinc', { type: 'raster', tiles: [`https://api.tomtom.com/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=${KEYS.tomtom}&_=${bust}`], tileSize: 256, minzoom: 8, maxzoom: 18 });
+  map.addLayer({ id: 'trafficinc', type: 'raster', source: 'trafficinc', minzoom: 8 });
+  if (map.getZoom() < 5) toast('Zoom in to see traffic');
+  return { remove: () => rm(['trafficinc', 'traffic'], ['trafficinc', 'traffic']) };
+};
+
+// ================= Route weather (drawn by route.js) =================
+let routeData = null, routeMarkers = [];
+export function drawRoute(fc, stops, line, keepView) {
+  clearRoute(true); routeData = [fc, stops, line];
+  if (!styleReady) return;
+  map.addSource('route', { type: 'geojson', data: fc });
+  map.addLayer({ id: 'route-casing', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#0b1020', 'line-width': 9, 'line-opacity': 0.75 } });
+  map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'c'], 'line-width': 5.5 } });
+  routeMarkers = stops.map((p) => { const m = pin([p.lon, p.lat], p.html, `route-pin k-${p.kind} sv${p.sev}`, () => popup([p.lon, p.lat], `<div class="qp">${p.tip}</div>`)); return m; });
+  if (!keepView) {
+    const b = new ml.LngLatBounds(); line.forEach((c) => b.extend(c));
+    const desk = innerWidth > 760;
+    map.fitBounds(b, { padding: desk ? { top: 80, bottom: 140, left: 380, right: 420 } : { top: 140, bottom: 220, left: 30, right: 30 }, duration: 1200, maxZoom: 11 });
+  }
+}
+export function clearRoute(keep) {
+  routeMarkers.forEach((m) => m.remove()); routeMarkers = [];
+  if (map?.getStyle()) rm(['route-line', 'route-casing'], ['route']);
+  if (!keep) routeData = null;
+}
 
 // ================= Fronts & pressure centers (WPC coded bulletin) =================
 function addFrontImages() {
@@ -582,23 +643,30 @@ function openStyleSheet() {
 const OPTS = {
   radarOpts: () => `<label class="slider">Opacity <input type="range" data-o="opacity" min="0.2" max="1" step="0.05" value="${S.opacity}"></label><label class="slider">Loop speed <input type="range" data-o="speed" min="150" max="1000" step="50" value="${1150 - S.speed}"></label>`,
   satOpts: () => `<div class="seg" data-o="sat">${[['ir', 'Infrared'], ['vis', 'Visible'], ['wv', 'Water vapor'], ['geocolor', 'True color']].map(([v, t]) => `<button data-v="${v}" class="${S.sat === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">True color runs about 90 minutes behind real time.</small>`,
+  hailOpts: () => `<div class="seg" data-o="hail">${[['24', '24 hours'], ['72', '3 days'], ['168', '7 days']].map(([v, t]) => `<button data-v="${v}" class="${S.hail === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">Hail reports sized by stone size, plus today's SPC hail risk area.</small>`,
   rainOpts: () => `<div class="seg" data-o="rain">${[['1h', 'Past hour'], ['24h', '24 hours'], ['72h', '72 hours']].map(([v, t]) => `<button data-v="${v}" class="${S.rain === v ? 'on' : ''}">${t}</button>`).join('')}</div>`,
 };
 function openLayersSheet() {
   const row = ([id, name, opts]) => `<div class="lrow" data-id="${id}">
-    <button class="lrow-main" ${opts ? `data-exp="${id}"` : ''}><span>${name}</span>${opts ? '<i class="chev">›</i>' : ''}</button>
-    <label class="tg"><input type="checkbox" data-layer="${id}" ${S.layers[id] ? 'checked' : ''}><span></span></label>
+    <button class="lrow-main" ${opts ? `data-exp="${id}"` : ''}><span>${name} ${badge(tierOf(id))}</span>${opts ? '<i class="chev">›</i>' : ''}</button>
+    <label class="tg${canLayer(id) ? '' : ' locked'}"><input type="checkbox" data-layer="${id}" ${S.layers[id] && canLayer(id) ? 'checked' : ''}><span></span></label>
     ${opts ? `<div class="lrow-opts" hidden>${OPTS[opts]()}</div>` : ''}</div>`;
   openSheet('Layers', LAYER_GROUPS.map(([g, rows]) => `<div class="lgroup"><div class="sheet-sub">${g}</div>${rows.map(row).join('')}</div>`).join('') +
     '<p class="muted small sheet-foot">Tap anywhere on the map for that spot\'s forecast, or to save it as a place.</p>', (b) => {
-    $$('[data-layer]', b).forEach((cb) => cb.onchange = () => toggleLayer(cb.dataset.layer, cb.checked));
+    $$('[data-layer]', b).forEach((cb) => cb.onchange = () => {
+      const id = cb.dataset.layer;
+      if (cb.checked && !canLayer(id)) { cb.checked = false; gate(id, layerName(id)); return; }
+      if (cb.checked && id === 'traffic' && !KEYS.tomtom) { cb.checked = false; toast('Traffic needs a TomTom key in config.js'); return; }
+      toggleLayer(id, cb.checked);
+    });
     $$('[data-exp]', b).forEach((btn) => btn.onclick = () => { const o = btn.closest('.lrow').querySelector('.lrow-opts'); o.hidden = !o.hidden; btn.classList.toggle('open', !o.hidden); });
     $$('[data-o="opacity"]', b).forEach((i) => i.oninput = () => { S.opacity = +i.value; showFrame(R.idx); save(); });
     $$('[data-o="speed"]', b).forEach((i) => i.oninput = () => { S.speed = 1150 - +i.value; save(); if (R.playing) play(); });
     $$('.seg[data-o]', b).forEach((sg) => $$('button', sg).forEach((btn) => btn.onclick = () => {
       $$('button', sg).forEach((x) => x.classList.toggle('on', x === btn));
       const key = sg.dataset.o; S[key] = btn.dataset.v; save();
-      const lid = key === 'sat' ? 'sat' : 'rain';
+      const lid = key === 'sat' ? 'sat' : key === 'hail' ? 'hail' : 'rain';
+      if (!canLayer(lid)) { gate(lid, layerName(lid)); return; }
       S.layers[lid] = true; $(`[data-layer="${lid}"]`, b).checked = true; refresh(lid); updateDock();
     }));
   });

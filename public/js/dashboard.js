@@ -2,9 +2,18 @@
 import { store, esc, $, $$, toast, getData } from './util.js';
 import * as F from './forecast.js';
 import { TILES } from './config.js';
+import { adSlot, fillAds, has, plan as curPlan, PAGE_LIMIT, openPricing } from './plan.js';
 
 const L = window.L;
 const NESDIS = 'https://cdn.star.nesdis.noaa.gov/GOES19/ABI';
+const NESDIS_W = 'https://cdn.star.nesdis.noaa.gov/GOES18/ABI';
+const SPC = 'https://www.spc.noaa.gov';
+const WPC = 'https://www.wpc.ncep.noaa.gov';
+const CIMSS = 'https://tropic.ssec.wisc.edu/real-time/atlantic/winds';
+const TT = 'https://www.tropicaltidbits.com/analysis/ocean';
+const MESO = (p, t) => IMG(`Mesoanalysis: ${t}`, 'Severe Weather', `${SPC}/exper/mesoanalysis/s19/${p}/${p}.gif`, 'https://www.spc.noaa.gov/exper/mesoanalysis/', 30);
+const SEC = (sat, sec, t, cat = 'Satellite Sectors') => IMG(t, cat, `${sat === 18 ? NESDIS_W : NESDIS}/SECTOR/${sec}/GEOCOLOR/1200x1200.jpg`, `https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G${sat}&sector=${sec}`, 10);
+const RIDGE = (k, t) => IMG(`${t} Radar Loop`, 'Radar Loops', `https://radar.weather.gov/ridge/standard/${k}_loop.gif`, 'https://radar.weather.gov/', 5);
 
 // Image products (NOAA/NWS, public domain). refresh = minutes between reloads.
 const IMG = (title, cat, src, link, refresh = 15, note = '') => ({ title, cat, kind: 'image', src, link, refresh, note });
@@ -57,30 +66,137 @@ export const WIDGETS = {
   cpc_610p: IMG('6-10 Day Rain Outlook', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/610day/610prcp.new.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/610day/', 360),
   cpc_814t: IMG('8-14 Day Temperature Outlook', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/814day/814temp.new.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/814day/', 360),
   cpc_814p: IMG('8-14 Day Rain Outlook', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/814day/814prcp.new.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/814day/', 360),
+  // ---- tropics, spaghettimodels-style ----
+  spaghetti: { title: 'Spaghetti Models', cat: 'Tropics', size: 'xl', kind: 'local' },
+  models_links: { title: 'Model Shortcuts', cat: 'Tropics', size: 'm', kind: 'local' },
+  nhc_epac2: IMG('East Pacific 2-Day Outlook', 'Tropics', 'https://www.nhc.noaa.gov/xgtwo/two_pac_2d0.png', 'https://www.nhc.noaa.gov/gtwo.php?basin=epac&fdays=2', 30),
+  nhc_cpac7: IMG('Central Pacific 7-Day Outlook', 'Tropics', 'https://www.nhc.noaa.gov/xgtwo/two_cpac_7d0.png', 'https://www.nhc.noaa.gov/gtwo.php?basin=cpac&fdays=7', 30),
+  goes_taw_loop: IMG('Tropical Atlantic Loop', 'Tropics', `${NESDIS}/SECTOR/taw/GEOCOLOR/GOES19-TAW-GEOCOLOR-900x540.gif`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=taw', 10),
+  goes_car_loop: IMG('Caribbean Loop', 'Tropics', `${NESDIS}/SECTOR/car/GEOCOLOR/GOES19-CAR-GEOCOLOR-1000x1000.gif`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=car', 10),
+  goes_pr: IMG('Puerto Rico Satellite', 'Tropics', `${NESDIS}/SECTOR/pr/GEOCOLOR/1200x1200.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=pr', 10),
+  goes_fd: IMG('Full Disk (Western Hemisphere)', 'Tropics', `${NESDIS}/FD/GEOCOLOR/1808x1808.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/fulldisk.php?sat=G19', 10),
+  cimss_shear: IMG('Wind Shear (CIMSS)', 'Tropics', `${CIMSS}/wg8shr.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  cimss_steer: IMG('Steering Currents (CIMSS)', 'Tropics', `${CIMSS}/wg8dlm1.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  cimss_vort: IMG('850mb Vorticity (CIMSS)', 'Tropics', `${CIMSS}/wg8vor3.GIF`, 'https://tropic.ssec.wisc.edu/', 60),
+  cimss_sal: IMG('Saharan Air Layer (CIMSS)', 'Tropics', 'https://tropic.ssec.wisc.edu/real-time/sal/splitEW.jpg', 'https://tropic.ssec.wisc.edu/', 60),
+  sst_atl: IMG('Atlantic Sea Temps', 'Tropics', `${TT}/cdas-sflux_sst_atl_1.png`, 'https://www.tropicaltidbits.com/analysis/ocean/', 360),
+  ssta_atl: IMG('Atlantic Sea Temp Anomaly', 'Tropics', `${TT}/cdas-sflux_ssta_atl_1.png`, 'https://www.tropicaltidbits.com/analysis/ocean/', 360),
+  ssta_glob: IMG('Global Sea Temp Anomaly', 'Tropics', `${TT}/cdas-sflux_ssta_global_1.png`, 'https://www.tropicaltidbits.com/analysis/ocean/', 360),
+  scales: { title: 'Reference Scales', cat: 'Tropics', size: 'l', kind: 'local' },
+  // ---- more severe ----
+  spc_hail: IMG('SPC Day 1 Hail Risk', 'Severe Weather', `${SPC}/partners/outlooks/national/swody1_HAIL.png`, `${SPC}/products/outlook/day1probotlk.html`, 15),
+  spc_wind: IMG('SPC Day 1 Wind Risk', 'Severe Weather', `${SPC}/partners/outlooks/national/swody1_WIND.png`, `${SPC}/products/outlook/day1probotlk.html`, 15),
+  spc_d48: IMG('SPC Days 4-8 Outlook', 'Severe Weather', `${SPC}/products/exper/day4-8/day48prob.gif`, `${SPC}/products/exper/day4-8/`, 120),
+  spc_rpt: IMG("Today's Storm Reports", 'Severe Weather', `${SPC}/climo/reports/today.gif`, `${SPC}/climo/reports/today.html`, 10),
+  spc_rpty: IMG("Yesterday's Storm Reports", 'Severe Weather', `${SPC}/climo/reports/yesterday.gif`, `${SPC}/climo/reports/yesterday.html`, 120),
+  spc_fire: IMG('Fire Weather Outlook', 'Severe Weather', `${SPC}/products/fire_wx/day1otlk_fire.gif`, `${SPC}/products/fire_wx/`, 60),
+  nws_haz: IMG('NWS Hazards Map', 'Severe Weather', 'https://forecast.weather.gov/wwamap/png/US.png', 'https://www.weather.gov/', 10),
+  meso_scp: MESO('scp', 'Supercell Composite'), meso_stp: MESO('stpc', 'Significant Tornado'), meso_cape: MESO('sbcp', 'Surface CAPE'), meso_shr: MESO('shr6', 'Deep Layer Shear'),
+  hailhist: { title: 'Hail History Here', cat: 'Severe Weather', size: 'l', kind: 'local' },
+  // ---- more satellite ----
+  goes_ir: IMG('US Infrared', 'Radar & Satellite', `${NESDIS}/CONUS/13/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  goes_vis: IMG('US Visible', 'Radar & Satellite', `${NESDIS}/CONUS/02/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  goes_air: IMG('US Air Mass', 'Radar & Satellite', `${NESDIS}/CONUS/AirMass/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  goes_sand: IMG('US Sandwich (storm tops)', 'Radar & Satellite', `${NESDIS}/CONUS/Sandwich/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  goes_glm: IMG('US Lightning (GLM)', 'Radar & Satellite', `${NESDIS}/CONUS/EXTENT3/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 5),
+  goes_glm_loop: IMG('US Lightning Loop', 'Radar & Satellite', `${NESDIS}/CONUS/EXTENT3/GOES19-CONUS-EXTENT3-625x375.gif`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 5),
+  goes_ir_loop: IMG('US Infrared Loop', 'Radar & Satellite', `${NESDIS}/CONUS/13/GOES19-CONUS-13-625x375.gif`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  goes_wv_loop: IMG('US Water Vapor Loop', 'Radar & Satellite', `${NESDIS}/CONUS/09/GOES19-CONUS-09-625x375.gif`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  goes_fire: IMG('US Fire Temperature', 'Radar & Satellite', `${NESDIS}/CONUS/FireTemperature/1250x750.jpg`, 'https://www.star.nesdis.noaa.gov/GOES/conus.php?sat=G19', 10),
+  sec_ne: SEC(19, 'ne', 'Northeast'), sec_cgl: SEC(19, 'cgl', 'Great Lakes'), sec_umv: SEC(19, 'umv', 'Upper Mississippi Valley'),
+  sec_smv: SEC(19, 'smv', 'Southern Mississippi Valley'), sec_sp: SEC(19, 'sp', 'Southern Plains'), sec_np: SEC(18, 'np', 'Northern Plains'),
+  sec_nr: SEC(18, 'nr', 'Northern Rockies'), sec_sr: SEC(18, 'sr', 'Southern Rockies'), sec_pnw: SEC(18, 'pnw', 'Pacific Northwest'), sec_psw: SEC(18, 'psw', 'Pacific Southwest'),
+  sec_ak: SEC(18, 'ak', 'Alaska'), sec_hi: SEC(18, 'hi', 'Hawaii'),
+  rl_ne: RIDGE('NORTHEAST', 'Northeast'), rl_gl: RIDGE('GREATLAKES', 'Great Lakes'), rl_cgl: RIDGE('CENTGRLAKES', 'Central Great Lakes'), rl_umv: RIDGE('UPPERMISSVLY', 'Upper Mississippi Valley'),
+  rl_smv: RIDGE('SOUTHMISSVLY', 'Southern Mississippi Valley'), rl_sp: RIDGE('SOUTHPLAINS', 'Southern Plains'), rl_nr: RIDGE('NORTHROCKIES', 'Northern Rockies'), rl_sr: RIDGE('SOUTHROCKIES', 'Southern Rockies'),
+  rl_pnw: RIDGE('PACNORTHWEST', 'Pacific Northwest'), rl_psw: RIDGE('PACSOUTHWEST', 'Pacific Southwest'), rl_ak: RIDGE('ALASKA', 'Alaska'), rl_hi: RIDGE('HAWAII', 'Hawaii'), rl_pr: RIDGE('CARIB', 'Puerto Rico'),
+  // ---- more rain, fronts, winter ----
+  ncfc1: IMG('National Forecast: Today', 'Rain & Fronts', `${WPC}/NationalForecastChart/staticmaps/noaad1.png`, `${WPC}/national_forecast/`, 120),
+  ncfc2: IMG('National Forecast: Tomorrow', 'Rain & Fronts', `${WPC}/NationalForecastChart/staticmaps/noaad2.png`, `${WPC}/national_forecast/`, 120),
+  ncfc3: IMG('National Forecast: Day 3', 'Rain & Fronts', `${WPC}/NationalForecastChart/staticmaps/noaad3.png`, `${WPC}/national_forecast/`, 120),
+  wpc_qpf2: IMG('Rain Forecast: Day 2', 'Rain & Fronts', `${WPC}/qpf/fill_98qwbg.gif`, `${WPC}/qpf/qpf2.shtml`, 120),
+  wpc_qpf3: IMG('Rain Forecast: Day 3', 'Rain & Fronts', `${WPC}/qpf/fill_99qwbg.gif`, `${WPC}/qpf/qpf2.shtml`, 120),
+  wpc_qpf5: IMG('Rain Forecast: 5 Days', 'Rain & Fronts', `${WPC}/qpf/p120i.gif`, `${WPC}/qpf/qpf2.shtml`, 120),
+  wpc_ero2: IMG('Flash Flood Risk: Day 2', 'Rain & Fronts', `${WPC}/qpf/98ewbg.gif`, `${WPC}/qpf/excessive_rainfall_outlook_ero.php`, 120),
+  wpc_ero3: IMG('Flash Flood Risk: Day 3', 'Rain & Fronts', `${WPC}/qpf/99ewbg.gif`, `${WPC}/qpf/excessive_rainfall_outlook_ero.php`, 120),
+  usdm: IMG('U.S. Drought Monitor', 'Long Range', 'https://droughtmonitor.unl.edu/data/png/current/current_usdm.png', 'https://droughtmonitor.unl.edu/', 720),
+  cpc_34t: IMG('Weeks 3-4 Temperature', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/WK34/gifs/WK34temp.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/WK34/', 720),
+  cpc_34p: IMG('Weeks 3-4 Rain', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/WK34/gifs/WK34prcp.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/WK34/', 720),
+  cpc_30t: IMG('Next Month Temperature', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/30day/off15_temp.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/30day/', 720),
+  cpc_30p: IMG('Next Month Rain', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/30day/off15_prcp.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/30day/', 720),
+  cpc_90t: IMG('3-Month Temperature', 'Long Range', 'https://www.cpc.ncep.noaa.gov/products/predictions/90day/off01_temp.gif', 'https://www.cpc.ncep.noaa.gov/products/predictions/90day/', 720),
+  // ---- marine & space ----
+  opc_atl: IMG('Atlantic Surface Analysis', 'Marine & Space', 'https://ocean.weather.gov/A_sfc_full_ocean_color.png', 'https://ocean.weather.gov/', 180),
+  opc_pac: IMG('Pacific Surface Analysis', 'Marine & Space', 'https://ocean.weather.gov/P_sfc_full_ocean_color.png', 'https://ocean.weather.gov/', 180),
+  aurora_n: IMG('Aurora Forecast (North)', 'Marine & Space', 'https://services.swpc.noaa.gov/images/animations/ovation/north/latest.jpg', 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast', 15),
+  aurora_tn: IMG("Tonight's Aurora View Line", 'Marine & Space', 'https://services.swpc.noaa.gov/experimental/images/aurora_dashboard/tonights_static_viewline_forecast.png', 'https://www.swpc.noaa.gov/content/aurora-dashboard-experimental', 60),
+  kp: IMG('Geomagnetic Kp Index', 'Marine & Space', 'https://services.swpc.noaa.gov/images/planetary-k-index.gif', 'https://www.swpc.noaa.gov/products/planetary-k-index', 30),
+  swx: IMG('Space Weather Overview', 'Marine & Space', 'https://services.swpc.noaa.gov/images/swx-overview-large.gif', 'https://www.swpc.noaa.gov/', 15),
+  sun: IMG('The Sun Right Now (SDO)', 'Marine & Space', 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg', 'https://sdo.gsfc.nasa.gov/data/', 30),
+  marine_links: { title: 'Buoys, Tides & Rivers', cat: 'Marine & Space', size: 'm', kind: 'local' },
   // ---- links & custom ----
   links: { title: 'Weather Links', cat: 'Links & Custom', size: 'm', kind: 'local' },
   custom_image: { title: 'Custom Image or Loop', cat: 'Links & Custom', size: 'm', kind: 'custom' },
   custom_link: { title: 'Custom Link', cat: 'Links & Custom', size: 's', kind: 'custom' },
 };
 
-const DEFAULT_LAYOUT = [
-  ['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'],
-  ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'm'],
-].map(([type, size]) => ({ id: uid(), type, size }));
+// Ready-made layouts (like the sections on spaghettimodels.com). Each can become its own dashboard page.
+export const TEMPLATES = {
+  mine: { name: 'My Weather', w: [['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'], ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'm']] },
+  tropics: { name: 'Tropics', pro: true, w: [['storms', 'l'], ['spaghetti', 'xl'], ['nhc_atl7', 'm'], ['nhc_atl2', 'm'], ['nhc_epac7', 'm'], ['goes_taw_loop', 'l'], ['goes_gm', 'm'], ['goes_car_loop', 'm'], ['goes_pr', 'm'], ['cimss_shear', 'm'], ['cimss_steer', 'm'], ['cimss_vort', 'm'], ['cimss_sal', 'm'], ['sst_atl', 'm'], ['ssta_atl', 'm'], ['ssta_glob', 'm'], ['opc_atl', 'm'], ['goes_fd', 'm'], ['models_links', 'm'], ['scales', 'l']] },
+  severe: { name: 'Severe', pro: true, w: [['alerts', 'm'], ['spc_d1', 'm'], ['spc_torn', 'm'], ['spc_hail', 'm'], ['spc_wind', 'm'], ['spc_ww', 'm'], ['spc_md', 'm'], ['radar_conus', 'l'], ['goes_glm_loop', 'm'], ['meso_scp', 'm'], ['meso_stp', 'm'], ['meso_cape', 'm'], ['meso_shr', 'm'], ['spc_rpt', 'm'], ['spc_d2', 'm'], ['spc_d3', 'm'], ['spc_d48', 'm'], ['nws_haz', 'l'], ['hailhist', 'l'], ['scales', 'l']] },
+  rain: { name: 'Rain & Winter', w: [['wpc_sfc', 'l'], ['ncfc1', 'm'], ['ncfc2', 'm'], ['ncfc3', 'm'], ['wpc_qpf1', 'm'], ['wpc_qpf2', 'm'], ['wpc_qpf3', 'm'], ['wpc_qpf5', 'm'], ['wpc_qpf7', 'm'], ['wpc_ero', 'm'], ['wpc_ero2', 'm'], ['wpc_ero3', 'm'], ['cpc_610t', 'm'], ['cpc_610p', 'm'], ['cpc_814t', 'm'], ['cpc_814p', 'm'], ['cpc_34t', 'm'], ['cpc_30t', 'm'], ['usdm', 'm']] },
+  sat: { name: 'Satellite & Radar', w: [['goes_conus_loop', 'l'], ['radar_conus', 'l'], ['goes_ir', 'm'], ['goes_wv_loop', 'm'], ['goes_vis', 'm'], ['goes_air', 'm'], ['goes_sand', 'm'], ['goes_glm', 'm'], ['goes_fire', 'm'], ['sec_ne', 'm'], ['sec_sp', 'm'], ['sec_cgl', 'm'], ['sec_psw', 'm'], ['rl_ne', 'm'], ['rl_sp', 'm'], ['rl_psw', 'm'], ['radar_se', 'm']] },
+  space: { name: 'Space & Marine', w: [['aurora_n', 'm'], ['aurora_tn', 'm'], ['kp', 'm'], ['swx', 'l'], ['sun', 'm'], ['opc_atl', 'l'], ['opc_pac', 'l'], ['marine_links', 'm']] },
+};
+const fromTpl = (k) => TEMPLATES[k].w.map(([type, size]) => ({ id: uid(), type, size }));
+const DEFAULT_LAYOUT = fromTpl('mine');
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
-let layout = store.get('dash', null) || DEFAULT_LAYOUT;
+// Pages: [{ id, name, layout }]. Migrates the old single layout.
+let pages = store.get('dashPages', null) || [{ id: uid(), name: 'My Weather', layout: store.get('dash', null) || DEFAULT_LAYOUT }];
+let cur = Math.min(store.get('dashPage', 0), pages.length - 1);
+let layout = pages[cur].layout;
 let editing = false, ctx = {}, sortable, miniMaps = [], refreshTimer;
 const SIZES = ['s', 'm', 'l', 'xl'];
-const save = () => store.set('dash', layout);
+const save = () => { pages[cur].layout = layout; store.set('dashPages', pages); store.set('dashPage', cur); };
+function goPage(i) { cur = i; layout = pages[cur].layout; save(); render(); }
+function renderPages() {
+  $('#dashPages').innerHTML = pages.map((p, i) => `<button class="dp${i === cur ? ' on' : ''}" data-pg="${i}">${esc(p.name)}${editing && pages.length > 1 && i === cur ? '<i data-pgdel title="Delete page">✕</i>' : ''}</button>`).join('') + '<button class="dp add" data-pgadd title="Add a page">+</button>';
+}
+function onPagesClick(e) {
+  if (e.target.closest('[data-pgdel]')) { if (confirmInline2(e.target.closest('[data-pgdel]'))) { pages.splice(cur, 1); goPage(Math.max(0, cur - 1)); } return; }
+  const b = e.target.closest('[data-pg]'); if (b) { if (+b.dataset.pg === cur && editing) return renamePage(); goPage(+b.dataset.pg); return; }
+  if (e.target.closest('[data-pgadd]')) openLayouts();
+}
+function confirmInline2(el) { if (el.dataset.armed) return true; el.dataset.armed = 1; el.textContent = 'Delete?'; setTimeout(() => { delete el.dataset.armed; el.textContent = '✕'; }, 3000); return false; }
+function renamePage() {
+  window.dispatchEvent(new CustomEvent('modal', { detail: { title: 'Rename page', html: `<div class="custom-form"><label>Page name<input id="pgName" value="${esc(pages[cur].name)}" maxlength="24"></label><button class="btn" id="pgSave">Save</button></div>` } }));
+  $('#pgSave').onclick = () => { pages[cur].name = $('#pgName').value.trim() || pages[cur].name; save(); renderPages(); window.dispatchEvent(new CustomEvent('modal-close')); };
+}
+function openLayouts() {
+  const lim = PAGE_LIMIT[curPlan()];
+  const html = `<p class="muted small">Pick a ready-made layout. Add it as a new page, or swap it into the page you're on.</p><div class="tpl-grid">${Object.entries(TEMPLATES).map(([k, t]) => `<div class="tpl"><b>${esc(t.name)}</b><small>${t.w.length} widgets</small><div class="tpl-btns"><button class="btn small" data-tadd="${k}">Add page</button><button class="btn small ghost" data-tset="${k}">Use here</button></div></div>`).join('')}</div>
+    <p class="muted small">${pages.length}/${lim > 50 ? '∞' : lim} pages on your plan.</p>`;
+  window.dispatchEvent(new CustomEvent('modal', { detail: { title: 'Dashboard layouts', html } }));
+  $$('[data-tadd]').forEach((b) => b.onclick = () => {
+    if (pages.length >= lim) { window.dispatchEvent(new CustomEvent('modal-close')); openPricing(`Your plan includes ${lim} dashboard page${lim > 1 ? 's' : ''}. Plus gets 5, Pro is unlimited.`); return; }
+    const k = b.dataset.tadd; pages.push({ id: uid(), name: TEMPLATES[k].name, layout: fromTpl(k) });
+    window.dispatchEvent(new CustomEvent('modal-close')); goPage(pages.length - 1);
+  });
+  $$('[data-tset]').forEach((b) => b.onclick = () => { const k = b.dataset.tset; layout = fromTpl(k); pages[cur].name = TEMPLATES[k].name; window.dispatchEvent(new CustomEvent('modal-close')); save(); render(); });
+}
 
 export function initDashboard() {
-  $('#dashEdit').onclick = () => { editing = !editing; $('#dashEdit').textContent = editing ? 'Done' : 'Customize'; $('#dashboard').classList.toggle('editing', editing); $('#dashAdd').hidden = !editing; $('#dashReset').hidden = !editing; sortable?.option('disabled', !editing); };
+  $('#dashEdit').onclick = () => { editing = !editing; $('#dashEdit').textContent = editing ? 'Done' : 'Customize'; $('#dashboard').classList.toggle('editing', editing); $('#dashAdd').hidden = !editing; $('#dashReset').hidden = !editing; sortable?.option('disabled', !editing); renderPages(); };
   $('#dashAdd').onclick = openCatalog;
-  $('#dashReset').onclick = () => { if (confirmInline('#dashReset', 'Reset layout?')) { layout = DEFAULT_LAYOUT.map((w) => ({ ...w, id: uid() })); save(); render(); } };
+  $('#dashTpl').onclick = openLayouts;
+  $('#dashPages').addEventListener('click', onPagesClick);
+  window.addEventListener('plan', () => { if (!$('#view-dashboard').hidden) render(); });
+  $('#dashReset').onclick = () => { if (confirmInline('#dashReset', 'Reset layout?')) { layout = fromTpl('mine'); save(); render(); } };
   $('#dashGrid').addEventListener('click', onGridClick);
   if (window.Sortable) {
-    sortable = window.Sortable.create($('#dashGrid'), { animation: 180, handle: '.w-head', disabled: true, ghostClass: 'w-ghost',
+    sortable = window.Sortable.create($('#dashGrid'), { animation: 180, handle: '.w-head', draggable: '.widget', disabled: true, ghostClass: 'w-ghost',
       onEnd: () => { const order = $$('#dashGrid > .widget').map((e) => e.dataset.id); layout.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)); save(); } });
   }
   clearInterval(refreshTimer);
@@ -97,8 +213,12 @@ export function showDashboard() { render(); }
 
 function render() {
   miniMaps.forEach((m) => m.remove()); miniMaps = [];
-  $('#dashGrid').innerHTML = layout.map(widgetHTML).join('');
+  renderPages();
+  // an ad slot after every 6 widgets for the free plan
+  $('#dashGrid').innerHTML = layout.map((w, i) => widgetHTML(w) + ((i + 1) % 6 === 0 ? adSlot('inline') : '')).join('') + (layout.length % 6 ? adSlot('inline') : '');
+  fillAds($('#dashGrid'));
   layout.forEach((w) => { if (w.type === 'minimap') mountMiniMap(w); });
+  $$('[data-hh]').forEach((el) => window.dispatchEvent(new CustomEvent('hail-history', { detail: el })));
   wireAlerts($('#dashGrid'));
 }
 
@@ -123,6 +243,11 @@ function bodyHTML(w, def) {
   if (w.type === 'custom_link') return `<a class="big-link" href="${esc(w.params?.link)}" target="_blank" rel="noopener">${esc(w.params?.title || w.params?.link)} ↗</a>`;
   if (w.type === 'links') return linksHTML();
   if (w.type === 'storms') return stormsHTML(ctx.storms);
+  if (w.type === 'spaghetti') return spaghettiHTML(ctx.storms);
+  if (w.type === 'models_links') return modelLinksHTML();
+  if (w.type === 'scales') return scalesHTML();
+  if (w.type === 'marine_links') return marineHTML();
+  if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
   if (!M) return '<div class="empty">Loading…</div>';
   switch (w.type) {
     case 'now': return F.heroHTML(M, loc);
@@ -164,6 +289,33 @@ function linksHTML() {
     ['Windy', 'https://www.windy.com/'],
   ].filter(Boolean);
   return `<div class="link-list">${links.map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${esc(t)}<span>↗</span></a>`).join('')}</div>`;
+}
+
+// Spaghetti plots for every active storm (Tropical Tidbits), like spaghettimodels.com
+const ttId = (s) => { const b = s.id?.slice(0, 2).toUpperCase(); return `${s.id?.slice(2, 4)}${{ AL: 'L', EP: 'E', CP: 'C' }[b] || 'L'}`; };
+function spaghettiHTML(storms) {
+  if (!storms) return '<div class="empty">Loading tropical data…</div>';
+  if (!storms.length) return '<div class="empty ok">✓ No active storms, so no spaghetti plots right now.</div>' + modelLinksHTML();
+  return `<div class="spag-grid">${storms.map((s) => { const id = ttId(s), src = `https://www.tropicaltidbits.com/storminfo/${id}_tracks_latest.png`, ens = `https://www.tropicaltidbits.com/storminfo/${id}_gefs_latest.png`;
+    return `<div><h4>${esc(s.name)} <small class="muted">${id}</small></h4><img class="w-img" data-src="${src}" data-refresh="60" src="${bust(src, 60)}" alt="${esc(s.name)} model tracks"><img class="w-img" data-src="${ens}" data-refresh="60" src="${bust(ens, 60)}" alt="${esc(s.name)} GFS ensemble" onerror="this.remove()"></div>`; }).join('')}</div>`;
+}
+function modelLinksHTML() {
+  const m = [['GFS', 'gfs'], ['Euro', 'ecmwf'], ['Canadian', 'cmc'], ['ICON', 'icon'], ['HRRR', 'hrrr'], ['NAM 3km', 'nam3km'], ['Euro AI', 'ecmwf-aifs'], ['GEFS', 'gfs-ens']];
+  return `<div class="chips links">${m.map(([t, k]) => `<a href="https://www.tropicaltidbits.com/analysis/models/?model=${k}" target="_blank" rel="noopener">${t}</a>`).join('')}</div>
+    <div class="link-list"><a href="https://www.tropicaltidbits.com/storminfo/" target="_blank" rel="noopener">Storm tracks & intensity<span>↗</span></a><a href="https://www.pivotalweather.com/model.php" target="_blank" rel="noopener">Pivotal Weather models<span>↗</span></a><a href="https://weather.cod.edu/forecast/" target="_blank" rel="noopener">College of DuPage models<span>↗</span></a><a href="https://www.nhc.noaa.gov/refresh/graphics_at1+shtml/" target="_blank" rel="noopener">NHC storm graphics<span>↗</span></a></div>`;
+}
+function scalesHTML() {
+  const ss = [['TD', '< 39', '#5ebaff'], ['TS', '39-73', '#00faf4'], ['Cat 1', '74-95', '#ffffcc'], ['Cat 2', '96-110', '#ffe775'], ['Cat 3', '111-129', '#ffc140'], ['Cat 4', '130-156', '#ff8f20'], ['Cat 5', '157+', '#ff6060']];
+  const ef = [['EF0', '65-85'], ['EF1', '86-110'], ['EF2', '111-135'], ['EF3', '136-165'], ['EF4', '166-200'], ['EF5', '200+']];
+  const hail = [['0.75"', 'Penny'], ['1.00"', 'Quarter'], ['1.50"', 'Ping pong'], ['1.75"', 'Golf ball'], ['2.50"', 'Tennis ball'], ['2.75"', 'Baseball'], ['4.00"', 'Softball']];
+  const t = (h, rows) => `<table class="scale"><tr>${h.map((x) => `<th>${x}</th>`).join('')}</tr>${rows}</table>`;
+  return `<div class="scales"><div><h4>Saffir-Simpson (mph)</h4>${t(['Cat', 'Wind'], ss.map(([a, b, c]) => `<tr><td><i style="background:${c}"></i>${a}</td><td>${b}</td></tr>`).join(''))}</div>
+    <div><h4>Enhanced Fujita (mph)</h4>${t(['Rating', 'Wind'], ef.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join(''))}</div>
+    <div><h4>Hail size</h4>${t(['Size', 'Like a'], hail.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join(''))}</div></div>`;
+}
+function marineHTML() {
+  const l = [['NDBC buoys', 'https://www.ndbc.noaa.gov/'], ['Tides & currents', 'https://tidesandcurrents.noaa.gov/'], ['Storm surge (NHC)', 'https://www.nhc.noaa.gov/surge/'], ['River forecasts', 'https://water.noaa.gov/'], ['Marine forecasts', 'https://www.weather.gov/marine/'], ['Rip current risk', 'https://www.weather.gov/safety/ripcurrent']];
+  return `<div class="link-list">${l.map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t}<span>↗</span></a>`).join('')}</div>`;
 }
 
 function stormsHTML(storms) {
