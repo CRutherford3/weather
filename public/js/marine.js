@@ -53,14 +53,18 @@ export async function loadMarine(loc) {
   const pt = { lat: b.lat, lon: b.lon };
   const [wave, wind, zone, tide, cams] = await Promise.allSettled([
     getData(`https://marine-api.open-meteo.com/v1/marine?latitude=${pt.lat}&longitude=${pt.lon}&timezone=auto&forecast_days=7&current=ocean_current_velocity,ocean_current_direction&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,wind_wave_height,sea_surface_temperature&daily=wave_height_max,swell_wave_height_max,swell_wave_period_max,wave_direction_dominant`, { cache: 1800e3 }),
-    getData(`https://api.open-meteo.com/v1/forecast?latitude=${pt.lat}&longitude=${pt.lon}&timezone=auto&forecast_days=7&wind_speed_unit=kn&daily=wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,weather_code`, { cache: 1800e3 }),
+    getData(`https://api.open-meteo.com/v1/forecast?latitude=${pt.lat}&longitude=${pt.lon}&timezone=auto&forecast_days=7&wind_speed_unit=kn&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl&daily=wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,weather_code`, { cache: 1800e3 }),
     marineZone(pt),
     loadTides(loc),
     getData('https://www.ndbc.noaa.gov/buoycams.php', { proxyFirst: true, cache: 600e3 }),
   ]);
+  // Many nearshore buoys only measure waves; borrow wind and pressure from the closest station that has them
+  const fresh = list.filter((x) => Date.now() - x.t < 3 * 36e5);
+  const near = (key) => { const r = fresh.filter((x) => x[key] != null).map((x) => ({ x, d: miles(pt, x) })).sort((a, c) => a.d - c.d)[0]; return r && r.d < 75 ? { ...r.x, miles: r.d, name: names[r.x.id] || '' } : null; };
+  const windStn = b.wspd == null ? near('wspd') : null, presStn = b.pres == null ? near('pres') : null;
   const cam = (cams.value || []).filter((c) => c.img).map((c) => ({ ...c, miles: miles(loc, { lat: c.lat, lon: c.lng }) })).sort((a, b) => a.miles - b.miles)[0];
   const alerts = await marineAlerts(loc, zone.value?.id);
-  return { loc, buoy: { ...b, name: names[b.id] || '', miles: d }, wave: wave.value, wind: wind.value, zone: zone.value, tide: tide.value, cam: cam && cam.miles < 300 ? cam : null, alerts };
+  return { loc, buoy: { ...b, name: names[b.id] || '', miles: d }, wave: wave.value, wind: wind.value, zone: zone.value, tide: tide.value, cam: cam && cam.miles < 300 ? cam : null, alerts, windStn, presStn };
 }
 async function marineZone(pt) {
   for (const type of ['coastal', 'offshore']) {
@@ -104,11 +108,19 @@ export function marineHTML(Mr) {
   const b = Mr.buoy;
   const far = b.miles > 150 ? `<div class="mar-note">The nearest coast is about ${Math.round(b.miles)} miles away, so this shows the closest buoy.</div>` : '';
   const age = Math.round((Date.now() - b.t) / 60e3);
+  const ago = (t) => { const m = Math.round((Date.now() - t) / 60e3); return m < 90 ? `${m} min ago` : `${Math.round(m / 60)} hr ago`; };
+  const pr = (mb) => (imp() ? (mb * 0.02953).toFixed(2) + ' in' : Math.round(mb) + ' mb');
+  const mc = Mr.wind?.current;
+  // wind: this buoy, else nearest station that measures it, else the model
+  const ws = b.wspd != null ? { v: b.wspd * 1.94384, d: b.wdir, g: b.gst != null ? b.gst * 1.94384 : null, src: '' } : Mr.windStn ? { v: Mr.windStn.wspd * 1.94384, d: Mr.windStn.wdir, g: Mr.windStn.gst != null ? Mr.windStn.gst * 1.94384 : null, src: `at ${Mr.windStn.id}, ${Math.round(Mr.windStn.miles)} mi` } : mc ? { v: mc.wind_speed_10m, d: mc.wind_direction_10m, g: mc.wind_gusts_10m, src: 'model estimate' } : null;
+  const ps = b.pres != null ? { v: b.pres, src: ago(b.t) } : Mr.presStn ? { v: Mr.presStn.pres, src: `at ${Mr.presStn.id}` } : mc ? { v: mc.pressure_msl, src: 'model estimate' } : null;
+  const cv = Mr.wave?.current;
   const now = `<div class="mar-now">
     <div class="mar-tile"><small>Waves</small><b>${ft(b.wvht)}</b><span>${b.dpd ? `${b.dpd}s period` : ''} ${b.mwd != null ? `from ${compass(b.mwd)}` : ''}</span></div>
-    <div class="mar-tile"><small>Wind</small><b>${b.wspd != null ? kn(b.wspd * 1.94384) : '--'}</b><span>${b.wdir != null ? compass(b.wdir) : ''}${b.gst != null ? ` gusts ${kn(b.gst * 1.94384)}` : ''}</span></div>
-    <div class="mar-tile"><small>Water</small><b>${b.wtmp != null ? fmtT(b.wtmp) : '--'}</b><span>${b.atmp != null ? `air ${fmtT(b.atmp)}` : ''}</span></div>
-    <div class="mar-tile"><small>Pressure</small><b>${b.pres != null ? (imp() ? (b.pres * 0.02953).toFixed(2) + ' in' : Math.round(b.pres) + ' mb') : '--'}</b><span>${age < 90 ? `${age} min ago` : `${Math.round(age / 60)} hr ago`}</span></div></div>
+    <div class="mar-tile"><small>Wind</small><b>${ws ? kn(ws.v) : '--'}</b><span>${ws ? `${ws.d != null ? compass(ws.d) : ''}${ws.g != null ? ` gusts ${kn(ws.g)}` : ''}${ws.src ? `<br>${ws.src}` : ''}` : ''}</span></div>
+    <div class="mar-tile"><small>Water</small><b>${b.wtmp != null ? fmtT(b.wtmp) : '--'}</b><span>${b.atmp != null ? `air ${fmtT(b.atmp)}` : ago(b.t)}</span></div>
+    <div class="mar-tile"><small>Pressure</small><b>${ps ? pr(ps.v) : '--'}</b><span>${ps ? ps.src : ''}</span></div>
+    ${cv?.ocean_current_velocity != null ? `<div class="mar-tile"><small>Current</small><b>${(cv.ocean_current_velocity / 1.852).toFixed(1)} kn</b><span>toward ${compass(cv.ocean_current_direction)}</span></div>` : ''}</div>
     <div class="muted small">Buoy <a href="https://www.ndbc.noaa.gov/station_page.php?station=${esc(b.id)}" target="_blank" rel="noopener">${esc(b.id)}${b.name ? ` · ${esc(b.name)}` : ''}</a> · ${Math.round(b.miles)} mi away</div>`;
 
   // 7-day seas and wind
@@ -162,16 +174,14 @@ export function marineHTML(Mr) {
     outlook = `<div class="mar-outlook ${cls}"><b>${txt}</b><span>Seas up to ${ft(w.wave_height_max[0])}, wind up to ${kn(wk)}. A rough guide only; check the NWS forecast below.</span></div>`;
   }
   const al = Mr.alerts?.length ? `<div class="mar-alerts">${Mr.alerts.map((a) => `<div><b>⚠ ${esc(a.event)}</b>${a.ends ? `<span>until ${new Date(a.ends).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>` : ''}</div>`).join('')}</div>` : '';
-  const cv = Mr.wave?.current;
-  const current = cv?.ocean_current_velocity != null ? `<div class="mar-tile"><small>Current</small><b>${(cv.ocean_current_velocity / 1.852).toFixed(1)} kn</b><span>toward ${compass(cv.ocean_current_direction)}</span></div>` : '';
-  const cam = Mr.cam ? `<section class="mar-cam"><h4>Live buoy camera</h4><div class="cam-strip"><img loading="lazy" src="https://www.ndbc.noaa.gov/images/buoycam/${esc(Mr.cam.img)}" alt="Buoy ${esc(Mr.cam.id)} camera"></div>
-    <div class="muted small">${esc(Mr.cam.name)} · ${Math.round(Mr.cam.miles)} mi · six views around the buoy, scroll sideways · <a href="https://www.ndbc.noaa.gov/buoycam.php?station=${esc(Mr.cam.id)}" target="_blank" rel="noopener">NDBC ↗</a></div></section>` : '';
+  const cam = Mr.cam ? `<div class="mar-cam"><h4>Live buoy camera</h4><div class="cam-strip"><img loading="lazy" src="https://www.ndbc.noaa.gov/images/buoycam/${esc(Mr.cam.img)}" alt="Buoy ${esc(Mr.cam.id)} camera"></div>
+    <div class="muted small">${esc(Mr.cam.name)} · ${Math.round(Mr.cam.miles)} mi · six views around the buoy, scroll sideways · <a href="https://www.ndbc.noaa.gov/buoycam.php?station=${esc(Mr.cam.id)}" target="_blank" rel="noopener">NDBC ↗</a></div></div>` : '';
   const links = `<div class="chips links mar-links">${[['Nautical charts', 'https://nauticalcharts.noaa.gov/viewers/'], ['Local Notice to Mariners', 'https://www.navcen.uscg.gov/local-notices-to-mariners'], ['Rip current safety', 'https://www.weather.gov/safety/ripcurrent'], ['Boating safety (USCG)', 'https://uscgboating.org/'], ['Marine forecasts', 'https://www.weather.gov/marine/']].map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t} ↗</a>`).join('')}</div>`;
 
   return `${far}${al}${outlook}<div class="mar-grid">
-    <section><h4>Right now</h4>${now}${current ? `<div class="mar-now one">${current}</div>` : ''}</section>
+    <section><h4>Right now</h4>${now}${cam}</section>
     <section><h4>Seas forecast</h4>${chart}${days}</section>
     <section><h4>Tides</h4>${tides}</section>
-    <section><h4>NWS marine forecast</h4>${zone}</section>${cam}</div>${links}
+    <section><h4>NWS marine forecast</h4>${zone}</section></div>${links}
     <p class="muted small">Buoys: NOAA NDBC. Waves: Open-Meteo Marine models. Tides: NOAA CO-OPS. Forecast: National Weather Service. Not for navigation.</p>`;
 }
