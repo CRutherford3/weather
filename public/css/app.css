@@ -629,3 +629,15 @@ body.popup-open .crosshair { opacity: 0; }
 .wx-card.collapsed .wx-mini { order: -1; font-size: 17px; }
 .wx-card.collapsed .wx-loc::after { content: '+'; font-size: 18px; color: var(--muted); margin-left: 2px; }
 @media (max-width: 760px) { .wx-card.collapsed { right: auto; left: 8px; } }
+/* marine extras */
+.mar-outlook { border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; display: grid; gap: 2px; border-left: 5px solid; }
+.mar-outlook span { font-size: 12.5px; color: var(--muted); }
+.mar-outlook.good { background: rgba(34,197,94,.12); border-color: #22c55e; } .mar-outlook.fair { background: rgba(234,179,8,.12); border-color: #eab308; }
+.mar-outlook.rough { background: rgba(249,115,22,.14); border-color: #f97316; } .mar-outlook.bad { background: rgba(239,68,68,.15); border-color: #ef4444; }
+.mar-alerts { display: grid; gap: 6px; margin-bottom: 10px; } .mar-alerts div { background: rgba(239,68,68,.14); border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; }
+.mar-now.one { grid-template-columns: repeat(4, 1fr); }
+.mar-cam { grid-column: 1 / -1; }
+.cam-strip { overflow-x: auto; border-radius: 10px; background: #000; -webkit-overflow-scrolling: touch; }
+.cam-strip img { height: 180px; display: block; max-width: none; }
+.cam-pop .cam-strip img { height: 120px; }
+.mar-links { margin-top: 12px; }

@@ -30,7 +30,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, buoys: false, waves: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, buoys: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
@@ -57,7 +57,7 @@ export const LAYER_GROUPS = [
     ['fronts', 'Fronts & Pressure'], ['winds', 'Winds (animated)'], ['temps', 'Temperatures'], ['aqi', 'Air Quality'],
   ]],
   ['Tropics', [['tropics', 'Hurricane Tracker']]],
-  ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast']]],
+  ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms']]],
   ['More', [
     ['places', 'My Places'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
   ]],
@@ -297,7 +297,9 @@ ADD.sat = async () => {
   return raster('sat', `${IEM}/goes_east_conus_${ch}/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.7, maxzoom: 9, before: firstRadarOr() });
 };
 const firstRadarOr = () => (R.frames[0] && map.getLayer(R.frames[0].id) ? R.frames[0].id : beforeId());
-ADD.lightning = async () => raster('lightning', `${IEM}/goes_east_glm/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 120e3)}`, { opacity: 0.95, maxzoom: 9 });
+// Lightning strike density, last 15 minutes (NOAA nowCOAST / NWS Ocean Prediction Center)
+const WMS = (base, layer, ver = '1.3.0') => `${base}?SERVICE=WMS&VERSION=${ver}&REQUEST=GetMap&LAYERS=${layer}&STYLES=&FORMAT=image/png&TRANSPARENT=true&${ver === '1.3.0' ? 'CRS' : 'SRS'}=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}`;
+ADD.lightning = async () => raster('lightning', `${WMS('https://nowcoast.noaa.gov/geoserver/observations/lightning_detection/ows', 'ldn_lightning_strike_density')}&_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.9, maxzoom: 10 });
 ADD.rain = async () => {
   const layer = { '1h': 'q2-n1p-900913', '24h': 'q2-p24h-900913', '72h': 'q2-p72h-900913' }[S.rain] || 'q2-p24h-900913';
   return raster('rain', `${IEM}/${layer}/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 600e3)}`, { opacity: 0.7, maxzoom: 10, before: firstRadarOr() });
@@ -391,6 +393,34 @@ ADD.buoys = async () => {
   });
 };
 
+// ================= More marine layers =================
+// Sea surface temperature, NASA GIBS (MUR blend, yesterday's analysis)
+ADD.sst = async () => {
+  const d = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  return raster('sst', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GHRSST_L4_MUR_Sea_Surface_Temperature/default/${d}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`, { opacity: 0.75, maxzoom: 7, before: firstRadarOr() });
+};
+// NOAA electronic nautical charts (depths, channels, buoys, hazards)
+ADD.charts = async () => raster('charts', 'https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image', { opacity: 1, maxzoom: 18, before: firstRadarOr() });
+// Offshore oil & gas platforms in place now (BOEM / BSEE)
+ADD.rigs = async () => {
+  const j = await getData('https://gis.boem.gov/arcgis/rest/services/BOEM_BSEE/MMC_Layers/MapServer/0/query?where=REMOVAL_DATE%20IS%20NULL&outFields=COMPLEX_ID_NUM,INSTALL_DATE&f=geojson', { cache: 86400e3, timeout: 30000 });
+  return geo('rigs', j, [{ type: 'circle', top: true, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2.5, 9, 6], 'circle-color': '#f59e0b', 'circle-stroke-color': '#0b1020', 'circle-stroke-width': 1 } }],
+    (f, ll) => { const p = f.properties, yr = p.INSTALL_DATE ? new Date(p.INSTALL_DATE).getFullYear() : '';
+      const pop = popup(f.geometry.coordinates, `<div class="qp"><div class="qp-name">Offshore platform</div><div class="qp-row">Complex ${esc(p.COMPLEX_ID_NUM)}${yr ? ` · installed ${yr}` : ''}</div><div class="qp-btns"><button class="btn small" id="rigsea">Seas &amp; forecast here</button></div><div class="muted small">BOEM / BSEE</div></div>`);
+      setTimeout(() => { const b = document.getElementById('rigsea'); if (b) b.onclick = () => { pop.remove(); H.onPick?.({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }, `Platform ${p.COMPLEX_ID_NUM}`); }; }, 0); });
+};
+// NOAA BuoyCAMs: live photos from cameras on offshore buoys
+ADD.cams = async () => {
+  const list = await getData('https://www.ndbc.noaa.gov/buoycams.php', { proxyFirst: true, cache: 600e3 });
+  const fc = { type: 'FeatureCollection', features: list.filter((c) => c.img).map((c) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: c })) };
+  return geo('cams', fc, [
+    { type: 'circle', top: true, paint: { 'circle-radius': 9, 'circle-color': '#0ea5e9', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } },
+    { type: 'symbol', top: true, layout: { 'text-field': '◉', 'text-size': 10, 'text-allow-overlap': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#fff' } },
+  ], (f) => { const c = f.properties;
+    popup(f.geometry.coordinates, `<div class="qp cam-pop"><div class="qp-name">${esc(c.name)}</div><div class="cam-strip"><img src="https://www.ndbc.noaa.gov/images/buoycam/${esc(c.img)}" alt="Buoy ${esc(c.id)} camera"></div><div class="muted small">Swipe for all 6 views · ${camTime(c.img)} · <a href="https://www.ndbc.noaa.gov/buoycam.php?station=${esc(c.id)}" target="_blank" rel="noopener">NDBC ↗</a></div></div>`); });
+};
+export const camTime = (img) => { const m = String(img).match(/(\d{4})_(\d\d)_(\d\d)_(\d\d)(\d\d)/); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+
 // ================= Hail map: storm reports sized by stone size + SPC hail risk =================
 const hailColor = (inch) => (inch >= 2.75 ? '#d946ef' : inch >= 2 ? '#ef4444' : inch >= 1.5 ? '#f97316' : inch >= 1 ? '#facc15' : '#a3e635');
 ADD.hail = async () => {
@@ -423,7 +453,29 @@ ADD.traffic = async () => {
   map.addSource('trafficinc', { type: 'raster', tiles: [`https://api.tomtom.com/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=${KEYS.tomtom}&_=${bust}`], tileSize: 256, minzoom: 8, maxzoom: 18 });
   map.addLayer({ id: 'trafficinc', type: 'raster', source: 'trafficinc', minzoom: 8 });
   if (map.getZoom() < 5) toast('Zoom in to see traffic');
-  return { remove: () => rm(['trafficinc', 'traffic'], ['trafficinc', 'traffic']) };
+  // Tap-able incident details (crashes, closures, construction) when zoomed in to a metro area
+  map.addSource('trafficpts', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'trafficpts', type: 'circle', source: 'trafficpts', minzoom: 9, paint: { 'circle-radius': 7, 'circle-color': ['get', 'c'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
+  const CAT = { 1: 'Accident', 2: 'Fog', 3: 'Dangerous conditions', 4: 'Rain', 5: 'Ice', 6: 'Traffic jam', 7: 'Lane closed', 8: 'Road closed', 9: 'Road work', 10: 'Wind', 11: 'Flooding', 14: 'Broken-down vehicle' };
+  const COL = { 1: '#ef4444', 6: '#f97316', 7: '#eab308', 8: '#7f1d1d', 9: '#f59e0b' };
+  let seq = 0;
+  const load = async () => {
+    if (map.getZoom() < 9 || !map.getSource('trafficpts')) return;
+    const my = ++seq, b = map.getBounds();
+    const fields = encodeURIComponent('{incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description},from,to,delay,roadNumbers,startTime,endTime}}}');
+    try {
+      const j = await getData(`https://api.tomtom.com/traffic/services/5/incidentDetails?key=${KEYS.tomtom}&bbox=${b.getWest().toFixed(4)},${b.getSouth().toFixed(4)},${b.getEast().toFixed(4)},${b.getNorth().toFixed(4)}&fields=${fields}&language=en-US&timeValidityFilter=present`, { noProxy: true, cache: 120e3 });
+      if (my !== seq || !map.getSource('trafficpts')) return;
+      map.getSource('trafficpts').setData({ type: 'FeatureCollection', features: (j.incidents || []).map((i) => {
+        const g = i.geometry, c = g.type === 'Point' ? g.coordinates : g.coordinates[Math.floor(g.coordinates.length / 2)], p = i.properties;
+        return { type: 'Feature', geometry: { type: 'Point', coordinates: c }, properties: { c: COL[p.iconCategory] || '#a855f7', cat: CAT[p.iconCategory] || 'Incident', desc: p.events?.map((e) => e.description).join('; ') || '', from: p.from || '', to: p.to || '', road: (p.roadNumbers || []).join(', '), delay: p.delay || 0 } };
+      }) });
+    } catch (e) { console.warn('traffic incidents', e); }
+  };
+  let t; const onMove = () => { clearTimeout(t); t = setTimeout(load, 700); };
+  map.on('moveend', onMove); load();
+  clickers.push(['trafficpts', (f, ll) => { const p = f.properties; popup(f.geometry.coordinates, `<div class="qp"><div class="qp-name">${esc(p.cat)}${p.road ? ` · ${esc(p.road)}` : ''}</div><div class="qp-row">${esc(p.desc)}</div>${p.from ? `<div class="qp-row">${esc(p.from)}${p.to ? ` to ${esc(p.to)}` : ''}</div>` : ''}${+p.delay ? `<div class="qp-row">Delay about ${Math.round(p.delay / 60)} min</div>` : ''}<div class="muted small">TomTom Traffic</div></div>`); }]);
+  return { remove: () => { map.off('moveend', onMove); seq++; for (let i = clickers.length - 1; i >= 0; i--) if (clickers[i][0] === 'trafficpts') clickers.splice(i, 1); rm(['trafficpts', 'trafficinc', 'traffic'], ['trafficpts', 'trafficinc', 'traffic']); } };
 };
 
 // ================= Route weather (drawn by route.js) =================

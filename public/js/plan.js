@@ -9,7 +9,7 @@ export const TIERS = {
   pro: { name: 'Pro', price: '$9.99', per: '/mo', blurb: 'For storm chasers, drivers and pros', features: ['Everything in Plus', 'Route weather planner, including EV charging stops', 'Hail history at any address', 'Marine & offshore: live buoys, seas and swell forecast, tides, NWS marine forecast', 'Live US traffic layer', 'Doppler radar: pick any NEXRAD site on the map or dashboard, reflectivity or velocity', 'Unlimited dashboard pages and pro layouts', '50+ extra pro maps: tropical analysis, ocean heat, surface analyses, storm-top satellite, forecast maps, climatology', 'iPad and Mac pro workspace'] },
 };
 const RANK = { free: 0, plus: 1, pro: 2 };
-export const LAYER_TIER = { winds: 'plus', temps: 'plus', aqi: 'plus', rain: 'plus', lightning: 'plus', drought: 'plus', hail: 'plus', tropics: 'plus', traffic: 'pro', sites: 'pro', buoys: 'pro', waves: 'pro' };
+export const LAYER_TIER = { winds: 'plus', temps: 'plus', aqi: 'plus', rain: 'plus', lightning: 'plus', drought: 'plus', hail: 'plus', tropics: 'plus', traffic: 'pro', sites: 'pro', buoys: 'pro', waves: 'pro', sst: 'pro', charts: 'pro', rigs: 'pro', cams: 'pro' };
 export const FEATURE_TIER = { route: 'pro', ev: 'pro', hailHistory: 'pro', hurricanes: 'plus', marine: 'pro', proLayouts: 'pro', noAds: 'plus' };
 export const PAGE_LIMIT = { free: 1, plus: 5, pro: 99 };
 

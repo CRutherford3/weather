@@ -51,13 +51,16 @@ export async function loadMarine(loc) {
   const { b, d } = nearestBuoy(list, loc);
   if (!b) throw new Error('No buoys reporting');
   const pt = { lat: b.lat, lon: b.lon };
-  const [wave, wind, zone, tide] = await Promise.allSettled([
-    getData(`https://marine-api.open-meteo.com/v1/marine?latitude=${pt.lat}&longitude=${pt.lon}&timezone=auto&forecast_days=7&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,wind_wave_height,sea_surface_temperature&daily=wave_height_max,swell_wave_height_max,swell_wave_period_max,wave_direction_dominant`, { cache: 1800e3 }),
+  const [wave, wind, zone, tide, cams] = await Promise.allSettled([
+    getData(`https://marine-api.open-meteo.com/v1/marine?latitude=${pt.lat}&longitude=${pt.lon}&timezone=auto&forecast_days=7&current=ocean_current_velocity,ocean_current_direction&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,wind_wave_height,sea_surface_temperature&daily=wave_height_max,swell_wave_height_max,swell_wave_period_max,wave_direction_dominant`, { cache: 1800e3 }),
     getData(`https://api.open-meteo.com/v1/forecast?latitude=${pt.lat}&longitude=${pt.lon}&timezone=auto&forecast_days=7&wind_speed_unit=kn&daily=wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,weather_code`, { cache: 1800e3 }),
     marineZone(pt),
     loadTides(loc),
+    getData('https://www.ndbc.noaa.gov/buoycams.php', { proxyFirst: true, cache: 600e3 }),
   ]);
-  return { loc, buoy: { ...b, name: names[b.id] || '', miles: d }, wave: wave.value, wind: wind.value, zone: zone.value, tide: tide.value };
+  const cam = (cams.value || []).filter((c) => c.img).map((c) => ({ ...c, miles: miles(loc, { lat: c.lat, lon: c.lng }) })).sort((a, b) => a.miles - b.miles)[0];
+  const alerts = await marineAlerts(loc, zone.value?.id);
+  return { loc, buoy: { ...b, name: names[b.id] || '', miles: d }, wave: wave.value, wind: wind.value, zone: zone.value, tide: tide.value, cam: cam && cam.miles < 300 ? cam : null, alerts };
 }
 async function marineZone(pt) {
   for (const type of ['coastal', 'offshore']) {
@@ -70,6 +73,17 @@ async function marineZone(pt) {
   }
   return null;
 }
+// Marine and beach hazards: small craft advisories, gales, rip currents, high surf, fog, waterspouts
+const MARINE_RX = /Marine|Craft|Gale|Storm Warning|Hurricane|Tropical|Rip|Surf|Beach|Coastal|Waterspout|Fog|Seas|Freezing Spray|Lakeshore/i;
+async function marineAlerts(loc, zoneId) {
+  const urls = [`https://api.weather.gov/alerts/active?point=${loc.lat.toFixed(3)},${loc.lon.toFixed(3)}`];
+  if (zoneId) urls.push(`https://api.weather.gov/alerts/active?zone=${zoneId}`);
+  const res = await Promise.allSettled(urls.map((u) => getData(u, { headers: NWS_HEADERS, cache: 300e3 })));
+  const seen = new Set(), out = [];
+  for (const r of res) for (const f of r.value?.features || []) { const p = f.properties; if (!MARINE_RX.test(p.event) || seen.has(p.event)) continue; seen.add(p.event); out.push({ event: p.event, headline: p.headline, ends: p.ends || p.expires }); }
+  return out;
+}
+
 async function loadTides(loc) {
   const st = (await tideStations()).reduce((best, s) => { const d = miles(loc, s); return d < best.d ? { s, d } : best; }, { s: null, d: Infinity });
   if (!st.s || st.d > 120) return null;
@@ -140,10 +154,26 @@ export function marineHTML(Mr) {
   const Z = Mr.zone;
   const zone = Z?.periods?.length ? `<div class="mar-zone"><div class="muted small">${esc(Z.name)} (${esc(Z.id)})</div>${Z.periods.slice(0, 6).map((p) => `<p><b>${esc(p.name)}:</b> ${esc(p.detailedForecast)}</p>`).join('')}</div>` : '<div class="empty">No NWS marine forecast zone near this buoy.</div>';
 
-  return `${far}<div class="mar-grid">
-    <section><h4>Right now</h4>${now}</section>
+  // rough small-boat outlook for today from forecast seas and wind
+  let outlook = '';
+  if (w && wn) {
+    const sf = w.wave_height_max[0] * 3.28084, wk = wn.wind_speed_10m_max[0];
+    const [cls, txt] = sf < 3 && wk < 12 ? ['good', 'Good boating conditions today'] : sf < 5 && wk < 18 ? ['fair', 'Fair, a bit choppy for small boats'] : sf < 8 && wk < 25 ? ['rough', 'Rough, small craft should use caution'] : ['bad', 'Hazardous for small boats'];
+    outlook = `<div class="mar-outlook ${cls}"><b>${txt}</b><span>Seas up to ${ft(w.wave_height_max[0])}, wind up to ${kn(wk)}. A rough guide only; check the NWS forecast below.</span></div>`;
+  }
+  const al = Mr.alerts?.length ? `<div class="mar-alerts">${Mr.alerts.map((a) => `<div><b>⚠ ${esc(a.event)}</b>${a.ends ? `<span>until ${new Date(a.ends).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>` : ''}</div>`).join('')}</div>` : '';
+  const cv = Mr.wave?.current;
+  const current = cv?.ocean_current_velocity != null ? `<div class="mar-tile"><small>Current</small><b>${(cv.ocean_current_velocity / 1.852).toFixed(1)} kn</b><span>toward ${compass(cv.ocean_current_direction)}</span></div>` : '';
+  const cam = Mr.cam ? `<section class="mar-cam"><h4>Live buoy camera</h4><div class="cam-strip"><img loading="lazy" src="https://www.ndbc.noaa.gov/images/buoycam/${esc(Mr.cam.img)}" alt="Buoy ${esc(Mr.cam.id)} camera"></div>
+    <div class="muted small">${esc(Mr.cam.name)} · ${Math.round(Mr.cam.miles)} mi · six views around the buoy, scroll sideways · <a href="https://www.ndbc.noaa.gov/buoycam.php?station=${esc(Mr.cam.id)}" target="_blank" rel="noopener">NDBC ↗</a></div></section>` : '';
+  const links = `<div class="chips links mar-links">${[['Nautical charts', 'https://nauticalcharts.noaa.gov/viewers/'], ['Local Notice to Mariners', 'https://www.navcen.uscg.gov/local-notices-to-mariners'], ['Rip current safety', 'https://www.weather.gov/safety/ripcurrent'], ['Boating safety (USCG)', 'https://uscgboating.org/'], ['Marine forecasts', 'https://www.weather.gov/marine/']].map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t} ↗</a>`).join('')}</div>`;
+
+  return `${far}${al}${outlook}<div class="mar-grid">
+    <section><h4>Right now</h4>${now.replace('</div></div>
+', `</div>${current ? '' : ''}</div>
+`)}${current ? `<div class="mar-now one">${current}</div>` : ''}</section>
     <section><h4>Seas forecast</h4>${chart}${days}</section>
     <section><h4>Tides</h4>${tides}</section>
-    <section><h4>NWS marine forecast</h4>${zone}</section></div>
+    <section><h4>NWS marine forecast</h4>${zone}</section>${cam}</div>${links}
     <p class="muted small">Buoys: NOAA NDBC. Waves: Open-Meteo Marine models. Tides: NOAA CO-OPS. Forecast: National Weather Service. Not for navigation.</p>`;
 }
