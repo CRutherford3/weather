@@ -588,3 +588,10 @@ table.scale { width: 100%; border-collapse: collapse; font-size: 12.5px; } .scal
 body.popup-open .crosshair { opacity: 0; }
 .crosshair { transition: opacity .15s; }
 .maplibregl-popup { z-index: 30; }
+/* Doppler radar widget */
+.dop-map { height: 380px; border-radius: 12px; overflow: hidden; background: var(--bg2); }
+.dop-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; }
+.dop-bar .muted { margin-left: auto; }
+.dop-tip { background: rgba(11,16,32,.8) !important; color: #e9d5ff !important; border: 0 !important; box-shadow: none !important; font: 700 10.5px Inter, sans-serif; padding: 1px 4px !important; }
+.dop-tip::before { display: none; }
+@media (max-width: 760px) { .dop-map { height: 300px; } .dop-bar .muted { display: none; } }

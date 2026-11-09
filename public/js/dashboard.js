@@ -1,6 +1,6 @@
 // Customizable dashboard: widgets can be added, removed, resized and dragged into any order. Saved per browser.
 import { store, esc, $, $$, toast, getData } from './util.js';
-import { radarSites } from './api.js';
+import { radarSites, nearestSite, siteScans } from './api.js';
 import * as F from './forecast.js';
 import { TILES } from './config.js';
 import { adSlot, fillAds, has, plan as curPlan, PAGE_LIMIT, openPricing } from './plan.js';
@@ -27,6 +27,7 @@ export const WIDGETS = {
   daily: { title: '16-Day Forecast', cat: 'Your Location', size: 'l', kind: 'local' },
   details: { title: 'Conditions Detail', cat: 'Your Location', size: 'l', kind: 'local' },
   minimap: { title: 'Live Radar', cat: 'Your Location', size: 'l', kind: 'local' },
+  doppler: { title: 'Doppler Radar (Pro)', cat: 'Your Location', size: 'l', kind: 'local' },
   nwsloop: { title: 'Local NWS Radar Loop', cat: 'Your Location', size: 'm', kind: 'local' },
   site_loop: { title: 'Radar Site Loop (Pro)', cat: 'Radar Loops', size: 'm', kind: 'local' },
   aqi: { title: 'Air Quality', cat: 'Your Location', size: 's', kind: 'local' },
@@ -143,7 +144,7 @@ export const WIDGETS = {
 
 // Ready-made layouts (like the sections on spaghettimodels.com). Each can become its own dashboard page.
 export const TEMPLATES = {
-  mine: { name: 'My Weather', w: [['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'], ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'm']] },
+  mine: { name: 'My Weather', w: [['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'], ['doppler', 'l'], ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'm']] },
   tropics: { name: 'Tropics', pro: true, w: [['storms', 'l'], ['spaghetti', 'xl'], ['nhc_atl7', 'm'], ['nhc_atl2', 'm'], ['nhc_epac7', 'm'], ['goes_taw_loop', 'l'], ['goes_gm', 'm'], ['goes_car_loop', 'm'], ['goes_pr', 'm'], ['cimss_shear', 'm'], ['cimss_steer', 'm'], ['cimss_vort', 'm'], ['cimss_sal', 'm'], ['sst_atl', 'm'], ['ssta_atl', 'm'], ['ssta_glob', 'm'], ['opc_atl', 'm'], ['goes_fd', 'm'], ['models_links', 'm'], ['scales', 'l']] },
   severe: { name: 'Severe', pro: true, w: [['alerts', 'm'], ['spc_d1', 'm'], ['spc_torn', 'm'], ['spc_hail', 'm'], ['spc_wind', 'm'], ['spc_ww', 'm'], ['spc_md', 'm'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_glm_loop', 'm'], ['meso_scp', 'm'], ['meso_stp', 'm'], ['meso_cape', 'm'], ['meso_shr', 'm'], ['spc_rpt', 'm'], ['spc_d2', 'm'], ['spc_d3', 'm'], ['spc_d48', 'm'], ['nws_haz', 'l'], ['hailhist', 'l'], ['scales', 'l']] },
   rain: { name: 'Rain & Winter', w: [['wpc_sfc', 'l'], ['ncfc1', 'm'], ['ncfc2', 'm'], ['ncfc3', 'm'], ['wpc_qpf1', 'm'], ['wpc_qpf2', 'm'], ['wpc_qpf3', 'm'], ['wpc_qpf5', 'm'], ['wpc_qpf7', 'm'], ['wpc_ero', 'm'], ['wpc_ero2', 'm'], ['wpc_ero3', 'm'], ['cpc_610t', 'm'], ['cpc_610p', 'm'], ['cpc_814t', 'm'], ['cpc_814p', 'm'], ['cpc_34t', 'm'], ['cpc_30t', 'm'], ['usdm', 'm']] },
@@ -158,7 +159,7 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 let pages = store.get('dashPages', null) || [{ id: uid(), name: 'My Weather', layout: store.get('dash', null) || DEFAULT_LAYOUT }];
 let cur = Math.min(store.get('dashPage', 0), pages.length - 1);
 let layout = pages[cur].layout;
-let editing = false, ctx = {}, sortable, miniMaps = [], refreshTimer;
+let editing = false, ctx = {}, sortable, miniMaps = [], refreshTimer, dopTimers = [];
 const SIZES = ['s', 'm', 'l', 'xl'];
 const save = () => { pages[cur].layout = layout; store.set('dashPages', pages); store.set('dashPage', cur); };
 function goPage(i) { cur = i; layout = pages[cur].layout; save(); render(); }
@@ -189,6 +190,15 @@ function openLayouts() {
 }
 
 export function initDashboard() {
+  // Pro: add the Doppler widget under Live Radar once, for layouts made before it existed
+  if (has('pro') && !store.get('dopplerAdded', false)) {
+    if (!pages.some((p) => p.layout.some((w) => w.type === 'doppler'))) {
+      const L0 = pages[0].layout, at = L0.findIndex((w) => w.type === 'daily');
+      L0.splice(at >= 0 ? at + 1 : L0.length, 0, { id: uid(), type: 'doppler', size: 'l' });
+      if (cur === 0) layout = L0; store.set('dashPages', pages);
+    }
+    store.set('dopplerAdded', true);
+  }
   $('#dashEdit').onclick = () => { editing = !editing; $('#dashEdit').textContent = editing ? 'Done' : 'Customize'; $('#dashboard').classList.toggle('editing', editing); $('#dashAdd').hidden = !editing; $('#dashReset').hidden = !editing; sortable?.option('disabled', !editing); renderPages(); };
   $('#dashAdd').onclick = openCatalog;
   $('#dashTpl').onclick = openLayouts;
@@ -219,7 +229,8 @@ function render() {
   // an ad slot after every 6 widgets for the free plan
   $('#dashGrid').innerHTML = layout.map((w, i) => widgetHTML(w) + ((i + 1) % 6 === 0 ? adSlot('inline') : '')).join('') + (layout.length % 6 ? adSlot('inline') : '');
   fillAds($('#dashGrid'));
-  layout.forEach((w) => { if (w.type === 'minimap') mountMiniMap(w); });
+  dopTimers.forEach(clearInterval); dopTimers = [];
+  layout.forEach((w) => { if (w.type === 'minimap') mountMiniMap(w); if (w.type === 'doppler' && has('pro')) mountDoppler(w); });
   fillSiteSelects();
   $$('[data-hh]').forEach((el) => window.dispatchEvent(new CustomEvent('hail-history', { detail: el })));
   wireAlerts($('#dashGrid'));
@@ -251,6 +262,7 @@ function bodyHTML(w, def) {
   if (w.type === 'models_links') return modelLinksHTML();
   if (w.type === 'scales') return scalesHTML();
   if (w.type === 'marine_links') return marineHTML();
+  if (w.type === 'doppler') return has('pro') ? `<div class="site-ctl"><select data-dsite="${w.id}"><option>Loading radar sites…</option></select><div class="seg small"><button data-dprod="N0B" data-w="${w.id}" class="${(w.params?.prod || 'N0B') === 'N0B' ? 'on' : ''}">Reflectivity</button><button data-dprod="N0S" data-w="${w.id}" class="${w.params?.prod === 'N0S' ? 'on' : ''}">Velocity</button></div></div><div class="dop-map" data-dop="${w.id}"></div><div class="dop-bar"><button class="w-btn" data-dplay="${w.id}">❚❚</button><span class="dop-time" data-dtime="${w.id}">Loading scans…</span><span class="muted small">Tap a radar dot to switch</span></div>` : `<div class="locked-card"><p>Your own Doppler radar: pick any of the 159 NEXRAD sites and loop its reflectivity or storm-relative velocity on a live map. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'site_loop') return has('pro') ? siteLoopHTML(w) : `<div class="locked-card"><p>Pick any of the 159 NEXRAD radars and watch its reflectivity or velocity loop. Part of Updraft Pro.</p><button class="btn" data-unlock="site">Unlock with Pro</button></div>`;
   if (w.type === 'hailhist') return '<div class="hail-hist" data-hh></div>';
   if (!M) return '<div class="empty">Loading…</div>';
@@ -368,11 +380,58 @@ function mountMiniMap(w) {
 }
 
 function onGridChange(e) {
+  const ds = e.target.closest('select[data-dsite]');
+  if (ds) { const w = layout.find((x) => x.id === ds.dataset.dsite); if (w) setDoppler(w, { site: ds.value }); return; }
   const sel = e.target.closest('select[data-site]'); if (!sel) return;
   const w = layout.find((x) => x.id === sel.dataset.site); if (!w) return;
   w.params = { ...(w.params || {}), site: sel.value }; save(); render();
 }
+// ---------- Doppler radar widget (Pro): one NEXRAD site, looping, on a live map ----------
+async function mountDoppler(w) {
+  const el = $(`.dop-map[data-dop="${w.id}"]`); if (!el) return;
+  const loc = ctx.loc || { lat: 33.75, lon: -84.39 };
+  let list = []; try { list = await radarSites(); } catch { el.innerHTML = '<div class="empty">Radar sites unavailable right now.</div>'; return; }
+  if (!el.isConnected) return;
+  const code = w.params?.site || store.get('dopplerSite', null) || nearestSite(list, loc.lat, loc.lon)?.code || 'MLB';
+  const prod = w.params?.prod || 'N0B';
+  const site = list.find((x) => x.code === code) || list[0];
+  // site picker, nearest first
+  const d = (x) => Math.round(Math.hypot(x.lat - loc.lat, (x.lon - loc.lon) * Math.cos(loc.lat * Math.PI / 180)) * 69);
+  const sel = $(`select[data-dsite="${w.id}"]`);
+  if (sel) sel.innerHTML = [...list].sort((a, b) => d(a) - d(b)).map((x) => `<option value="${x.code}" ${x.code === site.code ? 'selected' : ''}>${x.id} · ${esc(x.name)} (${d(x)} mi)</option>`).join('');
+  const m = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: false }).setView([site.lat, site.lon], 7);
+  miniMaps.push(m);
+  const dark = document.documentElement.dataset.theme !== 'light';
+  L.tileLayer(dark ? TILES.dark : TILES.light, { maxNativeZoom: 16 }).addTo(m);
+  const IEMT = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+  let scans = []; try { scans = (await siteScans(site.code, prod)).slice(-10); } catch { /* latest only */ }
+  if (!el.isConnected) return;
+  const frames = (scans.length ? scans : [null]).map((ts) => ({ ts, layer: L.tileLayer(`${IEMT}/ridge::${site.code}-${prod}-${ts ? ts.replace(/[-:TZ]/g, '').slice(0, 12) : '0'}/{z}/{x}/{y}.png${ts ? '' : `?_=${Math.floor(Date.now() / 120e3)}`}`, { opacity: 0, maxNativeZoom: 11 }).addTo(m) }));
+  L.tileLayer(dark ? TILES.darkLabels : TILES.lightLabels, { maxNativeZoom: 16, pane: 'overlayPane' }).addTo(m);
+  // radar dots: tap to switch
+  list.forEach((x) => {
+    const on = x.code === site.code;
+    L.circleMarker([x.lat, x.lon], { radius: on ? 7 : 5, color: on ? '#fff' : '#a78bfa', weight: 2, fillColor: on ? '#8b5cf6' : '#0b1020', fillOpacity: 1 })
+      .bindTooltip(x.id, { permanent: true, direction: 'bottom', className: 'dop-tip', offset: [0, 4] })
+      .on('click', () => setDoppler(w, { site: x.code })).addTo(m);
+  });
+  let i = frames.length - 1, playing = true, hold = 0;
+  const timeEl = $(`[data-dtime="${w.id}"]`);
+  const show = (k) => { frames.forEach((f, j) => f.layer.setOpacity(j === k ? 0.85 : 0)); const f = frames[k]; if (timeEl) timeEl.textContent = `${site.id} ${prod === 'N0S' ? 'velocity' : 'reflectivity'} · ${f.ts ? new Date(f.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'latest'}${k === frames.length - 1 ? ' (latest)' : ''}`; };
+  show(i);
+  dopTimers.push(setInterval(() => { if (!playing || frames.length < 2) return; if (i === frames.length - 1 && hold++ < 3) return; hold = 0; i = (i + 1) % frames.length; show(i); }, 550));
+  const pb = $(`[data-dplay="${w.id}"]`); if (pb) pb.onclick = () => { playing = !playing; pb.textContent = playing ? '❚❚' : '▶'; };
+  el.addEventListener('dblclick', (e) => e.stopPropagation());
+}
+function setDoppler(w, p) {
+  w.params = { ...(w.params || {}), ...p };
+  if (p.site) store.set('dopplerSite', p.site); // preferred site for every Doppler widget
+  save(); render();
+}
+
 function onGridClick(e) {
+  const dp = e.target.closest('[data-dprod]');
+  if (dp) { const w = layout.find((x) => x.id === dp.dataset.w); if (w) setDoppler(w, { prod: dp.dataset.dprod }); return; }
   const sp = e.target.closest('[data-sprod]');
   if (sp) { const w = layout.find((x) => x.id === sp.dataset.w); if (w) { w.params = { ...(w.params || {}), prod: sp.dataset.sprod }; save(); render(); } return; }
   const un = e.target.closest('[data-unlock]'); if (un) { openPricing(un.dataset.unlock === 'site' ? 'Radar site loops are part of Updraft Pro.' : 'The hurricane tracker is part of Updraft Plus.'); return; }
