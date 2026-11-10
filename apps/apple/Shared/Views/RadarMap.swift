@@ -1039,7 +1039,7 @@ struct RadarMap: PlatformViewRepresentable {
         // MARK: lightning strikes
         @MainActor private func loadStrikes() async {
             struct R: Decodable { let f: [[Double]] }
-            guard let url = URL(string: "/api/lightning", relativeTo: AppConfig.webBase),
+            guard let url = URL(string: "/api/lightning", relativeTo: AppConfig.apiBase),
                   let data = try? await URLSession.shared.data(from: url).0,
                   let r = try? JSONDecoder().decode(R.self, from: data), let map else { return }
             map.removeAnnotations(strikes)

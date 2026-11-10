@@ -1,0 +1,9 @@
+# Public data API for the DopplerIQ apps (Netlify site "doppleriq-api", no login).
+# Only the functions are published here; the website stays on its own private site.
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  # h5wasm ships a WebAssembly build that must not be bundled
+  external_node_modules = ["h5wasm"]

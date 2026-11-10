@@ -7,3 +7,4 @@ apps/apple/*.xcodeproj
 xcuserdata/
 DerivedData/
 .DS_Store
+.netlify

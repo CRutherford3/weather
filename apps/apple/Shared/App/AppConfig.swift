@@ -5,6 +5,8 @@ enum AppConfig {
     static let displayName = "DopplerIQ"
     /// The website, used for links and for a few shared services (lightning, proxy).
     static let webBase = URL(string: "https://weather.dialcheck.io")!
+    /// Public data API (lightning strikes, feed proxy). Its own Netlify site, so the website can stay private.
+    static let apiBase = URL(string: "https://doppleriq-api.netlify.app")!
     /// NWS asks every app to identify itself.
     static let userAgent = "DopplerIQWeather/1.0 (github.com/CRutherford3/weather)"
 

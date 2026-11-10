@@ -63,5 +63,4 @@ If Xcode shows a build error, copy the error text and send it to me.
 Next: the rest of the website's layers (hail, marine, snow, tropics, outages, traffic), home-screen widgets,
 severe-weather notifications, Apple TV.
 
-**Note:** lightning strikes come from the website's `/api/lightning`. While the website is private behind the Netlify login,
-that layer stays empty in the app. Everything else talks to NOAA and Open-Meteo directly.
+**Note:** lightning strikes come from the public API site (https://doppleriq-api.netlify.app/api/lightning). Everything else talks to NOAA, IEM and Open-Meteo directly.

@@ -28,7 +28,7 @@ All free, no API keys: National Weather Service (api.weather.gov), Open-Meteo, I
 
 ## How it's built
 
-Plain HTML, CSS and JavaScript modules in `public/` (no build step), Leaflet for the map, SortableJS for dashboard dragging. One Netlify function (`netlify/functions/proxy.mts`) fetches feeds that browsers can't read directly, limited to an allow list of weather hosts.
+Plain HTML, CSS and JavaScript modules in `public/` (no build step), Leaflet for the map, SortableJS for dashboard dragging. Netlify functions live in `api/netlify/functions`: `proxy.mts` fetches feeds that browsers can't read directly (limited to an allow list of weather hosts) and `lightning.mts` serves GOES lightning strikes. The website uses them, and they are also deployed on their own public site (`api/`, Netlify site doppleriq-api) for the iPhone, iPad and Mac apps, so the website itself can stay private.
 
 Rename the app: change `APP_NAME` in `public/js/config.js`, plus the name in `public/manifest.webmanifest` and the `<title>` in `public/index.html`.
 
@@ -40,7 +40,9 @@ npx netlify-cli dev
 
 ## Deploy
 
-Netlify builds from this repo automatically: publish directory `public`, functions in `netlify/functions`.
+Netlify builds from this repo automatically: publish directory `public`, functions in `api/netlify/functions`.
+
+The public API site (doppleriq-api) builds from the same repo with base directory `api`.
 
 ### Cloudflare Pages (free)
 
