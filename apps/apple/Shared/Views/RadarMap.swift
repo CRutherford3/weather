@@ -44,7 +44,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
     case fronts, temps, winds, aqi
     case hurricanes, twoutlook, windprob, surge
     case snowdepth, snowprob
-    case buoys, waves, sst, charts
+    case buoys, cams, waves, sst, charts
     case traffic, aviation, iss, outages, avalanche, drought, quakes, fires
 
     var id: String { rawValue }
@@ -75,6 +75,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .snowdepth: return "Snow Depth Now"
         case .snowprob: return "Next Day Snow (4 in+)"
         case .buoys: return "Buoys (live)"
+        case .cams: return "Buoy Cameras (live)"
         case .waves: return "Wave Heights"
         case .sst: return "Sea Surface Temperature"
         case .charts: return "Nautical Charts (NOAA)"
@@ -96,7 +97,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .fronts, .temps, .winds, .aqi: return .conditions
         case .hurricanes, .twoutlook, .windprob, .surge: return .tropics
         case .snowdepth, .snowprob, .avalanche: return .snow
-        case .buoys, .waves, .sst, .charts: return .marine
+        case .buoys, .cams, .waves, .sst, .charts: return .marine
         case .traffic, .aviation, .iss, .outages, .drought, .quakes, .fires: return .more
         }
     }
@@ -106,7 +107,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
         switch self {
         case .lightning, .rain, .rain72, .hail, .temps, .winds, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation:
             return .plus
-        case .sst, .charts, .buoys, .waves, .traffic, .outages:
+        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages:
             return .pro
         default:
             return .free
@@ -326,10 +327,12 @@ final class WxPoint: NSObject, MKAnnotation {
     /// When set, the point is drawn as a colored badge with this text instead of a dot.
     let label: String?
     let darkText: Bool
+    /// Buoy cameras: the live photo to open when tapped.
+    let link: URL?
     init(_ c: CLLocationCoordinate2D, title: String, subtitle: String, color: PColor, size: CGFloat, layer: MapLayer,
-         label: String? = nil, darkText: Bool = true) {
+         label: String? = nil, darkText: Bool = true, link: URL? = nil) {
         coordinate = c; self.title = title; self.subtitle = subtitle; self.color = color; self.size = size; self.layer = layer
-        self.label = label; self.darkText = darkText
+        self.label = label; self.darkText = darkText; self.link = link
     }
 }
 
@@ -404,6 +407,8 @@ struct RadarMap: PlatformViewRepresentable {
     var center: CLLocationCoordinate2D
     var recenterToken: Int            // change to fly back to `center`
     var onCenterChange: (CLLocationCoordinate2D) -> Void
+    /// Tapped a buoy camera: its name and live photo.
+    var onCamera: ((String, URL) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -617,6 +622,7 @@ struct RadarMap: PlatformViewRepresentable {
             case .hurricanes: await loadStorms()
             case .iss: await loadISS()
             case .buoys: await loadBuoys()
+            case .cams: await loadCams()
             case _ where layer.followsView: await loadView(layer)
             default: await loadGeo(layer)
             }
@@ -748,6 +754,14 @@ struct RadarMap: PlatformViewRepresentable {
                                    label: wv == nil ? nil : (imperial ? "\(ft ?? 0)'" : String(format: "%.1fm", wv ?? 0))))
             }
             put(.buoys, [], pts)
+        }
+
+        @MainActor private func loadCams() async {
+            let pts = await LiveData.buoyCams().map { c in
+                WxPoint(.init(latitude: c.lat, longitude: c.lon), title: c.name, subtitle: c.time, color: .hex("#0ea5e9"), size: 0,
+                        layer: .cams, label: "📷", darkText: false, link: c.url)
+            }
+            put(.cams, [], pts)
         }
 
         /// Value labels for the area on screen: temperatures, winds, air quality, waves, airports.
@@ -978,7 +992,7 @@ struct RadarMap: PlatformViewRepresentable {
                 } else {
                     v.image = Self.dot(w.color, w.size)
                 }
-                v.canShowCallout = !(w.title ?? "").isEmpty
+                v.canShowCallout = !(w.title ?? "").isEmpty && w.layer != .cams
                 return v
             }
             guard (annotation.title ?? nil) == "strike" else { return nil }
@@ -988,6 +1002,12 @@ struct RadarMap: PlatformViewRepresentable {
             v.image = Self.symbol(age < 5 ? "bolt.fill" : "circle.fill", color: age < 5 ? .systemYellow : (age < 15 ? .systemOrange : .systemRed), size: age < 5 ? 14 : 6)
             v.canShowCallout = false
             return v
+        }
+
+        func mapView(_ m: MKMapView, didSelect view: MKAnnotationView) {
+            guard let w = view.annotation as? WxPoint, w.layer == .cams, let u = w.link else { return }
+            m.deselectAnnotation(w, animated: false)
+            parent.onCamera?(w.title ?? "Buoy camera", u)
         }
 
         func mapView(_ m: MKMapView, regionDidChangeAnimated animated: Bool) {

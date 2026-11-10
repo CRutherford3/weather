@@ -32,7 +32,8 @@ struct DashPage: Codable, Identifiable, Hashable {
 
 /// Widgets that use the selected place's forecast (everything else is a map product or custom).
 enum LocalWidget: String, CaseIterable {
-    case now, alerts, hourly, daily, details, sun, radar
+    case now, alerts, nowcast, hourly, daily, details, aqi, sun, radar, nwsloop, nwstext, afd, models
+    case storms, spaghetti, modelLinks = "models_links", scales, buoycam, links
     var title: String {
         switch self {
         case .now: return "Current Conditions"
@@ -42,6 +43,18 @@ enum LocalWidget: String, CaseIterable {
         case .details: return "Conditions Detail"
         case .sun: return "Sun & Moon"
         case .radar: return "Live Radar"
+        case .nowcast: return "Next 3 Hours"
+        case .aqi: return "Air Quality"
+        case .nwsloop: return "Local NWS Radar Loop"
+        case .nwstext: return "NWS Forecast Text"
+        case .afd: return "Forecast Discussion"
+        case .models: return "Model Comparison"
+        case .storms: return "Active Tropical Systems"
+        case .spaghetti: return "Spaghetti Models"
+        case .modelLinks: return "Model Shortcuts"
+        case .scales: return "Reference Scales"
+        case .buoycam: return "Live Buoy Camera"
+        case .links: return "Weather Links"
         }
     }
     var icon: String {
@@ -53,6 +66,18 @@ enum LocalWidget: String, CaseIterable {
         case .details: return "list.bullet.rectangle"
         case .sun: return "sunrise"
         case .radar: return "dot.radiowaves.left.and.right"
+        case .nowcast: return "cloud.rain"
+        case .aqi: return "aqi.medium"
+        case .nwsloop: return "play.circle"
+        case .nwstext: return "text.alignleft"
+        case .afd: return "doc.text"
+        case .models: return "chart.xyaxis.line"
+        case .storms: return "hurricane"
+        case .spaghetti: return "scribble.variable"
+        case .modelLinks: return "link"
+        case .scales: return "ruler"
+        case .buoycam: return "video"
+        case .links: return "globe"
         }
     }
 }
@@ -63,7 +88,7 @@ final class DashStore: ObservableObject {
     @Published var pages: [DashPage] { didSet { save() } }
     @Published var current = 0
 
-    private static let key = "dashPagesV2"
+    private static let key = "dashPagesV3"
 
     init() {
         if let d = UserDefaults.standard.data(forKey: Self.key),
@@ -222,7 +247,12 @@ struct WidgetCard: View {
 
     @ViewBuilder private var content: some View {
         if let l = LocalWidget(rawValue: widget.kind) {
-            if l == .radar {
+            if (l == .storms || l == .spaghetti) && store.effectivePlan < .plus {
+                Button { showPlans = true } label: { Label("Live hurricane tracking is part of Plus", systemImage: "lock.fill").frame(maxWidth: .infinity, minHeight: 100) }
+                    .buttonStyle(.bordered)
+            } else if let v = live(l) {
+                v
+            } else if l == .radar {
                 MiniRadar().frame(height: widget.size == .large ? 340 : 240).clipShape(RoundedRectangle(cornerRadius: 12))
             } else if l == .alerts {
                 alerts
@@ -251,16 +281,30 @@ struct WidgetCard: View {
 
     private func image(_ url: String, tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
-            AsyncImage(url: URL(string: "\(url)\(url.contains("?") ? "&" : "?")_=\(bust)")) { phase in
-                switch phase {
-                case .success(let img): img.resizable().scaledToFit()
-                case .failure: Label("Image unavailable", systemImage: "photo").frame(maxWidth: .infinity, minHeight: 140)
-                default: ProgressView().frame(maxWidth: .infinity, minHeight: 140)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            RemoteImage(url: URL(string: "\(url)\(url.contains("?") ? "&" : "?")_=\(bust)"))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+    }
+
+    /// Widgets that load their own live data.
+    private func live(_ l: LocalWidget) -> AnyView? {
+        let p = state.place
+        switch l {
+        case .nowcast: return AnyView(NowcastWidget(place: p))
+        case .aqi: return AnyView(AQIWidget(place: p))
+        case .nwsloop: return AnyView(NWSLoopWidget(place: p))
+        case .nwstext: return AnyView(NWSTextWidget(place: p))
+        case .afd: return AnyView(AFDWidget(place: p))
+        case .models: return AnyView(ModelsWidget(place: p, units: state.units))
+        case .storms: return AnyView(StormsWidget())
+        case .spaghetti: return AnyView(SpaghettiWidget())
+        case .modelLinks: return AnyView(ModelLinksWidget())
+        case .scales: return AnyView(ScalesWidget())
+        case .buoycam: return AnyView(BuoyCamWidget(place: p))
+        case .links: return AnyView(LinksWidget(place: p))
+        default: return nil
+        }
     }
 
     @ViewBuilder private var alerts: some View {
@@ -340,7 +384,7 @@ struct WidgetCard: View {
                 Label("Sunset \(Fmt.time(f.daily.sunset.first ?? "", offset: off))", systemImage: "sunset.fill").symbolRenderingMode(.multicolor)
                 Label("\(m.name), \(m.illum)% lit", systemImage: m.symbol)
             }
-        case .alerts, .radar:
+        default:
             EmptyView()
         }
     }
@@ -446,7 +490,7 @@ struct WidgetCatalog: View {
             List {
                 Section("Your location") {
                     ForEach(LocalWidget.allCases, id: \.self) { l in
-                        Button { add(DashWidget(kind: l.rawValue, size: l == .hourly || l == .radar ? .large : .medium)) } label: {
+                        Button { add(DashWidget(kind: l.rawValue, size: [.hourly, .radar, .models, .afd, .spaghetti].contains(l) ? .large : .medium)) } label: {
                             Label(l.title, systemImage: l.icon)
                         }
                     }

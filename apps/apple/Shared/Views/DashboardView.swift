@@ -60,13 +60,7 @@ struct DashboardView: View {
                 .buttonStyle(.bordered)
             } else {
                 Button { zoom = p } label: {
-                    AsyncImage(url: URL(string: "\(p.url)\(p.url.contains("?") ? "&" : "?")_=\(bust)")) { phase in
-                        switch phase {
-                        case .success(let img): img.resizable().scaledToFit()
-                        case .failure: Label("Image unavailable", systemImage: "photo").frame(maxWidth: .infinity, minHeight: 160)
-                        default: ProgressView().frame(maxWidth: .infinity, minHeight: 160)
-                        }
-                    }
+                    RemoteImage(url: URL(string: "\(p.url)\(p.url.contains("?") ? "&" : "?")_=\(bust)"), minHeight: 160)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
@@ -84,7 +78,7 @@ struct ZoomedProduct: View {
     var body: some View {
         NavigationStack {
             ScrollView([.horizontal, .vertical]) {
-                AsyncImage(url: URL(string: "\(product.url)\(product.url.contains("?") ? "&" : "?")_=\(bust)")) { i in i.resizable().scaledToFit() } placeholder: { ProgressView() }
+                RemoteImage(url: URL(string: "\(product.url)\(product.url.contains("?") ? "&" : "?")_=\(bust)"), minHeight: 300)
                     .frame(minWidth: 320)
             }
             .navigationTitle(product.title)

@@ -7,13 +7,14 @@ struct RadarScreen: View {
     @StateObject private var radar = RadarController()
     @State private var recenter = 0
     @State private var showLayers = false
+    @State private var camera: BuoyCamSheet?
     var compact = true   // phone layout (card on top, dock at the bottom)
 
     var body: some View {
         ZStack {
-            RadarMap(radar: radar, center: state.place.coordinate, recenterToken: recenter) { c in
-                Task { @MainActor in state.mapCentered(c) }
-            }
+            RadarMap(radar: radar, center: state.place.coordinate, recenterToken: recenter,
+                     onCenterChange: { c in Task { @MainActor in state.mapCentered(c) } },
+                     onCamera: { name, url in camera = BuoyCamSheet(title: name, url: url) })
             .ignoresSafeArea()
             Crosshair()
         }
@@ -33,6 +34,7 @@ struct RadarScreen: View {
         .task { await radar.load() }
         .onChange(of: state.place) { _, _ in recenter += 1 }
         .sheet(isPresented: $showLayers) { LayersSheet(radar: radar).environmentObject(store) }
+        .sheet(item: $camera) { $0 }
     }
 
     private var dock: some View {

@@ -7,7 +7,7 @@ let code = src.slice(a, c).replace(/export const /g, 'const ');
 code += "\nreturn { WIDGETS, TEMPLATES };";
 const { WIDGETS, TEMPLATES } = new Function(code)();
 const rename = { sun: 'sdo_sun' };
-const local = { now: 'now', alerts: 'alerts', hourly: 'hourly', daily: 'daily', details: 'details', minimap: 'radar' };
+const local = { now: 'now', alerts: 'alerts', nowcast: 'nowcast', hourly: 'hourly', daily: 'daily', details: 'details', minimap: 'radar', doppler: 'nwsloop', nwsloop: 'nwsloop', site_loop: 'nwsloop', aqi: 'aqi', nwstext: 'nwstext', afd: 'afd', models: 'models', storms: 'storms', spaghetti: 'spaghetti', models_links: 'models_links', scales: 'scales', marine: 'buoycam', links: 'links' };
 const q = (s) => JSON.stringify(s);
 const cats = [];
 const byCat = {};
@@ -28,7 +28,7 @@ for (const t of Object.values(TEMPLATES)) {
     if (local[k]) return `(${q(local[k])}, ${sz[s]})`;
     const w = WIDGETS[k]; if (!w || w.kind !== 'image') return null;
     return `(${q(rename[k] || k)}, ${sz[s]})`;
-  }).filter(Boolean);
+  }).filter(Boolean).filter((x, i, arr) => arr.findIndex((y) => y.split(',')[0] === x.split(',')[0]) === i);
   out += `        (${q(t.name)}, ${!!t.pro}, [${ws.join(', ')}]),\n`;
 }
 out += `    ]\n}\n`;
