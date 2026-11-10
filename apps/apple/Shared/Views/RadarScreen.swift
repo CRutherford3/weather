@@ -9,13 +9,15 @@ struct RadarScreen: View {
     @State private var showLayers = false
     @State private var camera: BuoyCamSheet?
     @State private var showPlans = false
+    @State private var tappedSite: RadarService.Site?
     var compact = true   // phone layout (card on top, dock at the bottom)
 
     var body: some View {
         ZStack {
             RadarMap(radar: radar, center: state.place.coordinate, recenterToken: recenter,
                      onCenterChange: { c in Task { @MainActor in state.mapCentered(c) } },
-                     onCamera: { name, url in camera = BuoyCamSheet(title: name, url: url) })
+                     onCamera: { name, url in camera = BuoyCamSheet(title: name, url: url) },
+                     onSite: { s in tappedSite = s })
             .ignoresSafeArea()
             Crosshair()
         }
@@ -37,6 +39,14 @@ struct RadarScreen: View {
         .sheet(isPresented: $showLayers) { LayersSheet(radar: radar).environmentObject(store) }
         .sheet(item: $camera) { $0 }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
+        .confirmationDialog(tappedSite.map { "\($0.id) · \($0.name)" } ?? "Radar", isPresented: Binding(get: { tappedSite != nil }, set: { if !$0 { tappedSite = nil } }), titleVisibility: .visible) {
+            if let s = tappedSite {
+                Button("Reflectivity (rain and storms)") { var x = s; x.product = "N0B"; radar.setSite(x) }
+                Button("Velocity (wind toward / away)") { var x = s; x.product = "N0S"; radar.setSite(x) }
+                if radar.site != nil { Button("Back to Hi-Def Radar") { radar.setSite(nil) } }
+                Button("Cancel", role: .cancel) {}
+            }
+        }
     }
 
     private var dock: some View {
@@ -47,8 +57,13 @@ struct RadarScreen: View {
             }
             HStack(spacing: 6) {
                 Image(systemName: "dot.radiowaves.left.and.right")
-                Text(radar.layers.contains(.radar) ? "Hi-Def Radar" : "Radar Off").font(.subheadline.weight(.semibold))
-                if radar.mode != .recent { Text("· \(radar.mode.title)").font(.subheadline) }
+                if let s = radar.site {
+                    Text("\(s.id) \(s.productName)").font(.subheadline.weight(.semibold))
+                    Text("· \(s.name)").font(.subheadline).lineLimit(1)
+                } else {
+                    Text(radar.layers.contains(.radar) ? "Hi-Def Radar" : "Radar Off").font(.subheadline.weight(.semibold))
+                    if radar.mode != .recent { Text("· \(radar.mode.title)").font(.subheadline) }
+                }
                 Spacer()
             }
             .foregroundStyle(.secondary)
@@ -56,11 +71,22 @@ struct RadarScreen: View {
                 Button { radar.playing.toggle() } label: { Image(systemName: radar.playing ? "pause.fill" : "play.fill") }
                 timeLabel
                 Menu {
+                    if let s = radar.site {
+                        Button("Back to Hi-Def Radar") { radar.setSite(nil) }
+                        Button(s.product == "N0B" ? "Show Velocity" : "Show Reflectivity") {
+                            var x = s; x.product = s.product == "N0B" ? "N0S" : "N0B"; radar.setSite(x)
+                        }
+                        Divider()
+                    }
+                    Button {
+                        if proRadar { radar.layers.insert(.sites) } else { showPlans = true }
+                    } label: { Label("Doppler radar sites\(proRadar ? "" : " (Pro)")", systemImage: "dot.radiowaves.up.forward") }
+                    Divider()
                     ForEach(RadarMode.allCases, id: \.self) { m in
                         Button {
                             if m != .recent && !proRadar { showPlans = true } else { radar.setMode(m) }
                         } label: {
-                            if radar.mode == m { Label(m.title, systemImage: "checkmark") }
+                            if radar.mode == m && radar.site == nil { Label(m.title, systemImage: "checkmark") }
                             else { Text(m == .recent ? m.title : "\(m.title)\(proRadar ? "" : " (Pro)")") }
                         }
                     }

@@ -7,7 +7,7 @@ let code = src.slice(a, c).replace(/export const /g, 'const ');
 code += "\nreturn { WIDGETS, TEMPLATES };";
 const { WIDGETS, TEMPLATES } = new Function(code)();
 const rename = { sun: 'sdo_sun' };
-const local = { now: 'now', alerts: 'alerts', nowcast: 'nowcast', hourly: 'hourly', daily: 'daily', details: 'details', minimap: 'radar', doppler: 'nwsloop', nwsloop: 'nwsloop', site_loop: 'nwsloop', aqi: 'aqi', nwstext: 'nwstext', afd: 'afd', models: 'models', storms: 'storms', spaghetti: 'spaghetti', models_links: 'models_links', scales: 'scales', marine: 'buoycam', links: 'links' };
+const local = { now: 'now', alerts: 'alerts', nowcast: 'nowcast', hourly: 'hourly', daily: 'daily', details: 'details', minimap: 'radar', doppler: 'doppler', nwsloop: 'nwsloop', site_loop: 'doppler', aqi: 'aqi', nwstext: 'nwstext', afd: 'afd', models: 'models', storms: 'storms', spaghetti: 'spaghetti', models_links: 'models_links', scales: 'scales', marine: 'buoycam', links: 'links' };
 const q = (s) => JSON.stringify(s);
 const cats = [];
 const byCat = {};

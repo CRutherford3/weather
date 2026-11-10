@@ -42,7 +42,7 @@ struct TileSource {
 
 /// Map layers the app can draw. Mirrors the website's layer list and plan levels.
 enum MapLayer: String, CaseIterable, Identifiable {
-    case radar, satIR, satVis, satWV, satColor, lightning, rain, rain72
+    case radar, sites, satIR, satVis, satWV, satColor, lightning, rain, rain72
     case warnings, spc, mcd, lsr, hail
     case fronts, temps, winds, aqi
     case hurricanes, twoutlook, windprob, surge
@@ -55,6 +55,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .radar: return "Hi-Def Radar"
+        case .sites: return "Doppler Radar (tap a site)"
         case .satIR: return "Clouds: Infrared Satellite"
         case .satVis: return "Clouds: Visible Satellite"
         case .satWV: return "Clouds: Water Vapor"
@@ -95,7 +96,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
 
     var group: LayerGroup {
         switch self {
-        case .radar, .satIR, .satVis, .satWV, .satColor, .lightning, .rain, .rain72: return .radarSat
+        case .radar, .sites, .satIR, .satVis, .satWV, .satColor, .lightning, .rain, .rain72: return .radarSat
         case .warnings, .spc, .mcd, .lsr, .hail: return .severe
         case .fronts, .temps, .winds, .aqi: return .conditions
         case .hurricanes, .twoutlook, .windprob, .surge: return .tropics
@@ -110,7 +111,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
         switch self {
         case .lightning, .rain, .rain72, .hail, .temps, .winds, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation:
             return .plus
-        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages:
+        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages, .sites:
             return .pro
         default:
             return .free
@@ -425,6 +426,8 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     }
     /// Last hour, past 48 hours (Pro), or future radar (Pro).
     @Published private(set) var mode: RadarMode = .recent
+    /// Showing one Doppler radar instead of the US mosaic (nil = Hi-Def mosaic).
+    @Published private(set) var site: RadarService.Site?
     /// Set by the map: whether a frame's image has finished downloading.
     var isReady: ((Int) -> Bool)?
     private var waits = 0
@@ -444,15 +447,24 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     }
 
     func setMode(_ m: RadarMode) {
-        mode = m
+        mode = m; site = nil
+        Task { await load() }
+    }
+
+    /// Show one radar (Reflectivity or Velocity), or nil to go back to the Hi-Def mosaic.
+    func setSite(_ s: RadarService.Site?) {
+        site = s
+        if s != nil { mode = .recent; layers.insert(.radar) }
         Task { await load() }
     }
 
     func load() async {
-        let m = await MainActor.run { mode }
-        let f = await RadarService.frames(m)
+        let (m, s) = await MainActor.run { (mode, site) }
+        let frames: [RadarService.Frame]
+        if let s { frames = await RadarService.siteFrames(s) } else { frames = await RadarService.frames(m) }
         await MainActor.run {
-            guard m == self.mode else { return }
+            guard m == self.mode, s == self.site else { return }
+            let f = frames
             self.frames = f
             // past radar starts at the newest frame; future radar starts at "now"
             self.index = m == .future ? 0 : max(0, f.count - 1)
@@ -502,6 +514,8 @@ struct RadarMap: PlatformViewRepresentable {
     var onCenterChange: (CLLocationCoordinate2D) -> Void
     /// Tapped a buoy camera: its name and live photo.
     var onCamera: ((String, URL) -> Void)? = nil
+    /// Tapped a radar site on the Doppler layer.
+    var onSite: ((RadarService.Site) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -547,6 +561,7 @@ struct RadarMap: PlatformViewRepresentable {
         private var frameImages: [Int: (CGImage, MKMapRect)] = [:]
         private var frameKey = ""
         private var frameCount = 0
+        private var wasSite = false
         private var shownFrame = -1
         private var shownOpacity = -1.0
         private var radarTask: Task<Void, Never>?
@@ -612,10 +627,13 @@ struct RadarMap: PlatformViewRepresentable {
             let on = map.overlays.contains { $0 === radarOverlay }
             if L.contains(.radar) {
                 if !on { map.addOverlay(radarOverlay, level: .aboveRoads) }
-                let key = parent.radar.frames.map(\.template).joined()
+                let key = parent.radar.frames.map { $0.template + ($0.tiles ?? "") }.joined()
                 if key != frameKey {
                     frameKey = key
-                    if parent.radar.frames.count != frameCount { frameImages = [:]; shownFrame = -1 }   // new mode: start fresh
+                    let isSite = parent.radar.frames.first?.tiles != nil
+                    // new mode, or switching to / from / between single radars: start fresh
+                    if parent.radar.frames.count != frameCount || isSite || wasSite { frameImages = [:]; shownFrame = -1 }
+                    wasSite = isSite
                     frameCount = parent.radar.frames.count
                     parent.radar.isReady = { [weak self] i in self?.frameImages[i] != nil }
                     loadRadarImages()
@@ -693,6 +711,68 @@ struct RadarMap: PlatformViewRepresentable {
             r.show(img, rect)
         }
 
+        /// One radar's frames: map tiles around the site stitched into one image per frame (fixed area, so
+        /// panning doesn't reload them).
+        private func loadSiteImages() {
+            let frames = parent.radar.frames
+            let current = parent.radar.index
+            let order = frames.indices.sorted { abs($0 - current) < abs($1 - current) }
+            radarTask = Task { [weak self] in
+                await withTaskGroup(of: (Int, (CGImage, MKMapRect)?).self) { g in
+                    var next = 0
+                    while next < min(3, order.count) {
+                        let i = order[next]; next += 1
+                        let f = frames[i]
+                        g.addTask { (i, await Coordinator.stitch(f.tiles ?? "", center: f.center ?? .init())) }
+                    }
+                    for await (i, res) in g {
+                        if Task.isCancelled { break }
+                        if let res {
+                            await MainActor.run {
+                                guard let self else { return }
+                                self.frameImages[i] = res
+                                if i == self.parent.radar.index { self.shownFrame = -1; self.showFrame(i) }
+                            }
+                        }
+                        if next < order.count {
+                            let j = order[next]; next += 1
+                            let f = frames[j]
+                            g.addTask { (j, await Coordinator.stitch(f.tiles ?? "", center: f.center ?? .init())) }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// Downloads the zoom-8 tiles covering about 260 km around a radar and joins them into one image.
+        nonisolated static func stitch(_ template: String, center: CLLocationCoordinate2D, radiusKm: Double = 260, z: Int = 8) async -> (CGImage, MKMapRect)? {
+            let ts = MKMapSize.world.width / Double(1 << z)
+            let c = MKMapPoint(center), rad = radiusKm * 1000 * MKMapPointsPerMeterAtLatitude(center.latitude)
+            let x0 = Int(((c.x - rad) / ts).rounded(.down)), x1 = Int(((c.x + rad) / ts).rounded(.down))
+            let y0 = Int(((c.y - rad) / ts).rounded(.down)), y1 = Int(((c.y + rad) / ts).rounded(.down))
+            let cols = x1 - x0 + 1, rows = y1 - y0 + 1
+            guard cols > 0, rows > 0, cols * rows <= 36,
+                  let ctx = CGContext(data: nil, width: cols * 256, height: rows * 256, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            var got = 0
+            await withTaskGroup(of: (Int, Int, CGImage?).self) { g in
+                for x in x0...x1 {
+                    for y in y0...y1 {
+                        let u = URL(string: template.replacingOccurrences(of: "{z}", with: String(z))
+                            .replacingOccurrences(of: "{x}", with: String(x)).replacingOccurrences(of: "{y}", with: String(y)))
+                        g.addTask { (x, y, await fetchImage(u)) }
+                    }
+                }
+                for await (x, y, img) in g {
+                    guard let img else { continue }
+                    got += 1
+                    ctx.draw(img, in: CGRect(x: (x - x0) * 256, y: (rows - 1 - (y - y0)) * 256, width: 256, height: 256))
+                }
+            }
+            guard got > 0, let out = ctx.makeImage() else { return nil }
+            return (out, MKMapRect(x: Double(x0) * ts, y: Double(y0) * ts, width: Double(cols) * ts, height: Double(rows) * ts))
+        }
+
         nonisolated static func fetchImage(_ url: URL?) async -> CGImage? {
             guard let url, let data = try? await WxTileOverlay.session.data(from: url).0,
                   let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
@@ -703,6 +783,10 @@ struct RadarMap: PlatformViewRepresentable {
         func loadRadarImages() {
             guard let map, parent.radar.layers.contains(.radar), !parent.radar.frames.isEmpty else { return }
             radarTask?.cancel()
+            if parent.radar.frames.first?.tiles != nil {   // one radar: fixed area, no need to reload after panning
+                if frameImages.count < parent.radar.frames.count { loadSiteImages() }
+                return
+            }
             let v = map.visibleMapRect
             let r = v.insetBy(dx: -v.size.width * 0.3, dy: -v.size.height * 0.3).intersection(MKMapRect.world)
             guard !r.isNull, r.size.width > 0, r.size.height > 0 else { return }
@@ -785,6 +869,7 @@ struct RadarMap: PlatformViewRepresentable {
             case .iss: await loadISS()
             case .buoys: await loadBuoys()
             case .cams: await loadCams()
+            case .sites: await loadSites()
             case _ where layer.followsView: await loadView(layer)
             default: await loadGeo(layer)
             }
@@ -916,6 +1001,15 @@ struct RadarMap: PlatformViewRepresentable {
                                    label: wv == nil ? nil : (imperial ? "\(ft ?? 0)'" : String(format: "%.1fm", wv ?? 0))))
             }
             put(.buoys, [], pts)
+        }
+
+        @MainActor private func loadSites() async {
+            let cur = parent.radar.site?.id
+            let pts = await LiveData.radarSites().map { s in
+                WxPoint(.init(latitude: s.lat, longitude: s.lon), title: "\(s.id) · \(s.name)", subtitle: "NEXRAD Doppler radar",
+                        color: s.id == cur ? .hex("#8b5cf6") : .hex("#1e1b4b"), size: 0, layer: .sites, label: s.id, darkText: false)
+            }
+            put(.sites, [], pts)
         }
 
         @MainActor private func loadCams() async {
@@ -1202,7 +1296,7 @@ struct RadarMap: PlatformViewRepresentable {
                 } else {
                     v.image = Self.dot(w.color, w.size)
                 }
-                v.canShowCallout = !(w.title ?? "").isEmpty && w.layer != .cams
+                v.canShowCallout = !(w.title ?? "").isEmpty && w.layer != .cams && w.layer != .sites
                 return v
             }
             guard (annotation.title ?? nil) == "strike" else { return nil }
@@ -1215,9 +1309,15 @@ struct RadarMap: PlatformViewRepresentable {
         }
 
         func mapView(_ m: MKMapView, didSelect view: MKAnnotationView) {
-            guard let w = view.annotation as? WxPoint, w.layer == .cams, let u = w.link else { return }
-            m.deselectAnnotation(w, animated: false)
-            parent.onCamera?(w.title ?? "Buoy camera", u)
+            guard let w = view.annotation as? WxPoint else { return }
+            if w.layer == .cams, let u = w.link {
+                m.deselectAnnotation(w, animated: false)
+                parent.onCamera?(w.title ?? "Buoy camera", u)
+            } else if w.layer == .sites, let id = w.label {
+                m.deselectAnnotation(w, animated: false)
+                let name = (w.title ?? "").components(separatedBy: " · ").last ?? ""
+                parent.onSite?(RadarService.Site(id: id, name: name, lat: w.coordinate.latitude, lon: w.coordinate.longitude))
+            }
         }
 
         func mapView(_ m: MKMapView, regionDidChangeAnimated animated: Bool) {

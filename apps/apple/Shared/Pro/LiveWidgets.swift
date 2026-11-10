@@ -114,6 +114,28 @@ enum LiveData {
         }
     }
 
+    /// Every NEXRAD (WSR-88D) radar, from the NWS. Loaded once per launch.
+    private static var sitesCache: [RadarService.Site]?
+    static func radarSites() async -> [RadarService.Site] {
+        if let c = sitesCache { return c }
+        guard let j = await json("https://api.weather.gov/radar/stations?stationType=WSR-88D") as? [String: Any],
+              let fs = j["features"] as? [[String: Any]] else { return [] }
+        let list: [RadarService.Site] = fs.compactMap { f in
+            guard let p = f["properties"] as? [String: Any], let g = f["geometry"] as? [String: Any],
+                  let c = g["coordinates"] as? [Any], c.count >= 2, let lo = num(c[0]), let la = num(c[1]) else { return nil }
+            return RadarService.Site(id: str(p["id"]), name: str(p["name"]), lat: la, lon: lo)
+        }
+        sitesCache = list
+        return list
+    }
+    static func nearestSite(_ p: Place) async -> RadarService.Site? {
+        await radarSites().min { a, b in
+            let da = pow(a.lat - p.lat, 2) + pow((a.lon - p.lon) * cos(p.lat * .pi / 180), 2)
+            let db = pow(b.lat - p.lat, 2) + pow((b.lon - p.lon) * cos(p.lat * .pi / 180), 2)
+            return da < db
+        }
+    }
+
     struct BuoyCam: Identifiable { let id: String; let name: String; let lat: Double; let lon: Double; let img: String
         var url: URL? { URL(string: "https://www.ndbc.noaa.gov/images/buoycam/\(img)") }
         var page: URL? { URL(string: "https://www.ndbc.noaa.gov/buoycam.php?station=\(id)") }

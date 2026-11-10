@@ -86,7 +86,47 @@ enum RadarMode: String, CaseIterable {
 /// (the same radar as the website) and, for future radar, the NOAA HRRR model's forecast radar.
 enum RadarService {
     /// `template` holds {bbox} (EPSG:3857 meters), {w} and {h}.
-    struct Frame: Identifiable { let id: Int; let time: Date; let template: String; var future = false }
+    struct Frame: Identifiable {
+        let id: Int; let time: Date; let template: String; var future = false
+        /// Single-radar (Doppler) frames: a {z}/{x}/{y} tile template drawn around the radar site.
+        var tiles: String? = nil
+        var center: CLLocationCoordinate2D? = nil
+    }
+
+    /// One NEXRAD radar, in Reflectivity (N0B) or Velocity (N0S), like the website's Doppler mode.
+    struct Site: Equatable {
+        let id: String       // KMLB
+        let name: String
+        let lat: Double
+        let lon: Double
+        var product = "N0B"
+        var code: String { String(id.dropFirst()) }   // IEM uses MLB
+        var productName: String { product == "N0S" ? "Velocity" : "Reflectivity" }
+        static func == (a: Site, b: Site) -> Bool { a.id == b.id && a.product == b.product }
+    }
+
+    /// The last hour of scans from one radar.
+    static func siteFrames(_ s: Site) async -> [Frame] {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm'Z'"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
+        let now = Date()
+        let tile = "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::"
+        let center = CLLocationCoordinate2D(latitude: s.lat, longitude: s.lon)
+        var out: [Frame] = []
+        if let url = URL(string: "https://mesonet.agron.iastate.edu/json/radar.py?operation=list&radar=\(s.code)&product=\(s.product)&start=\(f.string(from: now.addingTimeInterval(-3600)))&end=\(f.string(from: now))"),
+           let data = try? await URLSession.shared.data(from: url).0,
+           let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let scans = j["scans"] as? [[String: Any]] {
+            for sc in scans.suffix(12) {
+                guard let ts = sc["ts"] as? String, let t = iso.date(from: ts) ?? f.date(from: ts) else { continue }
+                let stamp = ts.filter(\.isNumber).prefix(12)
+                out.append(Frame(id: out.count, time: t, template: "", tiles: "\(tile)\(s.code)-\(s.product)-\(stamp)/{z}/{x}/{y}.png", center: center))
+            }
+        }
+        if out.isEmpty {   // no scan list: show the latest image
+            out.append(Frame(id: 0, time: now, template: "", tiles: "\(tile)\(s.code)-\(s.product)-0/{z}/{x}/{y}.png?_=\(Int(now.timeIntervalSince1970 / 120))", center: center))
+        }
+        return out
+    }
 
     private static let iso: ISO8601DateFormatter = ISO8601DateFormatter()
 

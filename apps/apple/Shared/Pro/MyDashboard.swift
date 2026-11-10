@@ -37,6 +37,7 @@ struct DashPage: Codable, Identifiable, Hashable {
 /// Widgets that use the selected place's forecast (everything else is a map product or custom).
 enum LocalWidget: String, CaseIterable {
     case now, alerts, nowcast, hourly, daily, details, aqi, sun, radar, nwsloop, nwstext, afd, models
+    case doppler
     case storms, spaghetti, modelLinks = "models_links", scales, buoycam, links
     var title: String {
         switch self {
@@ -48,6 +49,7 @@ enum LocalWidget: String, CaseIterable {
         case .sun: return "Sun & Moon"
         case .radar: return "Live Radar"
         case .nowcast: return "Next 3 Hours"
+        case .doppler: return "Doppler Radar"
         case .aqi: return "Air Quality"
         case .nwsloop: return "Local NWS Radar Loop"
         case .nwstext: return "NWS Forecast Text"
@@ -71,6 +73,7 @@ enum LocalWidget: String, CaseIterable {
         case .sun: return "sunrise"
         case .radar: return "dot.radiowaves.left.and.right"
         case .nowcast: return "cloud.rain"
+        case .doppler: return "dot.radiowaves.up.forward"
         case .aqi: return "aqi.medium"
         case .nwsloop: return "play.circle"
         case .nwstext: return "text.alignleft"
@@ -387,6 +390,7 @@ struct WidgetCard: View {
         case .nowcast: return AnyView(NowcastWidget(place: p))
         case .aqi: return AnyView(AQIWidget(place: p))
         case .nwsloop: return AnyView(NWSLoopWidget(place: p))
+        case .doppler: return AnyView(DopplerWidget(place: p).frame(height: widget.size == .full || widget.size == .large ? 380 : 280))
         case .nwstext: return AnyView(NWSTextWidget(place: p))
         case .afd: return AnyView(AFDWidget(place: p))
         case .models: return AnyView(ModelsWidget(place: p, units: state.units))
@@ -480,6 +484,33 @@ struct WidgetCard: View {
         default:
             EmptyView()
         }
+    }
+}
+
+/// Your nearest NEXRAD radar on its own, with a Reflectivity / Velocity switch (the website's Doppler card).
+struct DopplerWidget: View {
+    let place: Place
+    @StateObject private var radar = RadarController()
+    @State private var velocity = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(radar.site.map { "\($0.id) · \($0.name)" } ?? "Finding the nearest radar…").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Picker("", selection: $velocity) { Text("Reflectivity").tag(false); Text("Velocity").tag(true) }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+            }
+            RadarMap(radar: radar, center: radar.site.map { .init(latitude: $0.lat, longitude: $0.lon) } ?? place.coordinate,
+                     recenterToken: radar.site == nil ? 0 : 1, onCenterChange: { _ in })
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .task(id: place.id) { await pick() }
+        .onChange(of: velocity) { _, _ in Task { await pick() } }
+    }
+    private func pick() async {
+        guard var s = await LiveData.nearestSite(place) else { return }
+        s.product = velocity ? "N0S" : "N0B"
+        radar.setSite(s)
     }
 }
 
