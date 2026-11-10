@@ -142,13 +142,51 @@ enum MapLayer: String, CaseIterable, Identifiable {
 
 // MARK: - Tile overlay that loads its own tiles
 
+/// Ties the radar loop's frames together. A tile MapKit asks for in one frame is downloaded for
+/// every frame at once, so the loop never waits on the network, and the loop can ask whether a
+/// frame has finished loading before showing it.
+final class RadarFrameGroup: @unchecked Sendable {
+    private let lock = NSLock()
+    private var overlays: [WxTileOverlay] = []
+    private var pending: [Int: Int] = [:]   // frame index -> tiles still downloading
+
+    func set(_ o: [WxTileOverlay]) { lock.lock(); overlays = o; pending = [:]; lock.unlock() }
+    func prefetch(_ path: MKTileOverlayPath, from src: WxTileOverlay) {
+        lock.lock(); let others = overlays.filter { $0 !== src }; lock.unlock()
+        for o in others { o.warm(path) }
+    }
+    func began(_ f: Int) { lock.lock(); pending[f, default: 0] += 1; lock.unlock() }
+    func ended(_ f: Int) { lock.lock(); pending[f] = max(0, (pending[f] ?? 1) - 1); lock.unlock() }
+    func isReady(_ f: Int) -> Bool { lock.lock(); defer { lock.unlock() }; return (pending[f] ?? 0) == 0 }
+}
+
+/// One download per tile URL, even when several frames or zoom levels ask for it at the same time.
+final class TileInflight: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: [NSString: [(Data?) -> Void]] = [:]
+    /// Returns true if the caller should start the download.
+    func join(_ key: NSString, _ cb: @escaping (Data?) -> Void) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if waiting[key] != nil { waiting[key]?.append(cb); return false }
+        waiting[key] = [cb]; return true
+    }
+    func finish(_ key: NSString, _ data: Data?) {
+        lock.lock(); let cbs = waiting.removeValue(forKey: key) ?? []; lock.unlock()
+        cbs.forEach { $0(data) }
+    }
+}
+
 /// Loads tiles itself so it can send the app's User-Agent, cache them, and "overzoom":
 /// past a source's highest zoom it crops and enlarges the parent tile instead of going blank.
 final class WxTileOverlay: MKTileOverlay {
     let template: String
     let nativeMaxZ: Int
     let usesBBox: Bool
+    /// Radar loop membership (nil for ordinary layers).
+    weak var group: RadarFrameGroup?
+    var frame = -1
 
+    static let inflight = TileInflight()
     static let cache: NSCache<NSString, NSData> = { let c = NSCache<NSString, NSData>(); c.totalCostLimit = 80 << 20; return c }()
     static let session: URLSession = {
         let c = URLSessionConfiguration.default
@@ -185,27 +223,44 @@ final class WxTileOverlay: MKTileOverlay {
     }
 
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {
+        group?.prefetch(path, from: self)
+        tile(path) { result($0, nil) }
+    }
+
+    /// Download a tile into the cache without drawing it (used to preload other radar frames).
+    func warm(_ path: MKTileOverlayPath) { tile(path) { _ in } }
+
+    private func tile(_ path: MKTileOverlayPath, _ done: @escaping (Data?) -> Void) {
         if usesBBox || path.z <= nativeMaxZ {
-            fetch(z: path.z, x: path.x, y: path.y, result: result)
+            fetch(z: path.z, x: path.x, y: path.y, done)
             return
         }
+        // past the source's top zoom: enlarge a piece of the parent tile
         let f = 1 << (path.z - nativeMaxZ)
         let subX = path.x % f, subY = path.y % f
-        fetch(z: nativeMaxZ, x: path.x / f, y: path.y / f) { data, err in
-            guard let data else { result(nil, err); return }
-            result(Self.crop(data, parts: f, subX: subX, subY: subY), nil)
+        guard let parent = url(z: nativeMaxZ, x: path.x / f, y: path.y / f) else { done(nil); return }
+        let cropKey = "\(parent.absoluteString)#\(f)-\(subX)-\(subY)" as NSString
+        if let d = Self.cache.object(forKey: cropKey) { done(d as Data); return }
+        fetch(z: nativeMaxZ, x: path.x / f, y: path.y / f) { data in
+            guard let data, let out = Self.crop(data, parts: f, subX: subX, subY: subY) else { done(nil); return }
+            Self.cache.setObject(out as NSData, forKey: cropKey, cost: out.count)
+            done(out)
         }
     }
 
-    private func fetch(z: Int, x: Int, y: Int, result: @escaping (Data?, Error?) -> Void) {
-        guard let u = url(z: z, x: x, y: y) else { result(nil, nil); return }
+    private func fetch(z: Int, x: Int, y: Int, _ done: @escaping (Data?) -> Void) {
+        guard let u = url(z: z, x: x, y: y) else { done(nil); return }
         let key = u.absoluteString as NSString
-        if let d = Self.cache.object(forKey: key) { result(d as Data, nil); return }
-        Self.session.dataTask(with: u) { data, resp, err in
+        if let d = Self.cache.object(forKey: key) { done(d as Data); return }
+        guard Self.inflight.join(key, done) else { return }
+        let g = group, fr = frame
+        g?.began(fr)
+        Self.session.dataTask(with: u) { data, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 200
-            guard let data, code < 400 else { result(nil, err); return }
-            Self.cache.setObject(data as NSData, forKey: key, cost: data.count)
-            result(data, nil)
+            let ok = data != nil && code < 400
+            if ok, let data { Self.cache.setObject(data as NSData, forKey: key, cost: data.count) }
+            g?.ended(fr)
+            Self.inflight.finish(key, ok ? data : nil)
         }.resume()
     }
 
@@ -252,6 +307,9 @@ final class RadarController: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") }
     }
     @Published var opacity: Double = 0.75
+    /// Set by the map: whether a frame's tiles have finished downloading.
+    var isReady: ((Int) -> Bool)?
+    private var waits = 0
     private var timer: Timer?
     private var refreshTimer: Timer?
 
@@ -284,7 +342,11 @@ final class RadarController: ObservableObject, @unchecked Sendable {
             guard let self, self.playing, !self.frames.isEmpty else { return }
             // pause briefly on the latest frame
             if self.index == self.frames.count - 1 && Int(Date().timeIntervalSince1970 * 2) % 4 != 0 { return }
-            self.index = (self.index + 1) % self.frames.count
+            let next = (self.index + 1) % self.frames.count
+            // hold the current frame (up to about 3 seconds) until the next one has loaded
+            if let ready = self.isReady, !ready(next), self.waits < 6 { self.waits += 1; return }
+            self.waits = 0
+            self.index = next
         }
     }
 
@@ -343,6 +405,7 @@ struct RadarMap: PlatformViewRepresentable {
 
         // radar loop: one overlay per frame; only the current one is visible
         private var frameOverlays: [Int: WxTileOverlay] = [:]
+        private let frameGroup = RadarFrameGroup()
         private var frameIndex: [ObjectIdentifier: Int] = [:]
         private var frameRenderers: [ObjectIdentifier: MKTileOverlayRenderer] = [:]
         private var frameKey = ""
@@ -381,13 +444,21 @@ struct RadarMap: PlatformViewRepresentable {
                 map.removeOverlays(Array(frameOverlays.values))
                 frameOverlays = [:]; frameIndex = [:]; frameRenderers = [:]; shownFrame = -1
                 frameKey = key
+                frameGroup.set([])
                 if L.contains(.radar) {
+                    var all: [WxTileOverlay] = []
                     for (i, f) in parent.radar.frames.enumerated() {
                         let o = WxTileOverlay(TileSource(template: f.template, nativeMaxZ: 10, opacity: parent.radar.opacity))
+                        o.group = frameGroup
+                        o.frame = i
                         frameOverlays[i] = o
                         frameIndex[ObjectIdentifier(o)] = i
+                        all.append(o)
                         map.addOverlay(o, level: .aboveRoads)
                     }
+                    frameGroup.set(all)
+                    let g = frameGroup
+                    parent.radar.isReady = { [weak g] i in g?.isReady(i) ?? true }
                 }
             }
 
