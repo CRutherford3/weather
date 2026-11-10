@@ -59,7 +59,7 @@ enum LocalWidget: String, CaseIterable {
         case .spaghetti: return "Spaghetti Models"
         case .modelLinks: return "Model Shortcuts"
         case .scales: return "Reference Scales"
-        case .buoycam: return "Live Buoy Camera"
+        case .buoycam: return "Live Buoy Camera (pick any)"
         case .links: return "Weather Links"
         }
     }
@@ -92,7 +92,27 @@ enum LocalWidget: String, CaseIterable {
 /// Saved dashboard pages (kept on this device).
 final class DashStore: ObservableObject {
     static let shared = DashStore()
-    @Published var pages: [DashPage] { didSet { save() } }
+    @Published var pages: [DashPage] {
+        didSet {
+            save()
+            if !restoring, oldValue != pages {
+                undoStack.append(oldValue); if undoStack.count > 60 { undoStack.removeFirst() }
+                redoStack = []
+            }
+        }
+    }
+    private var undoStack: [[DashPage]] = []
+    private var redoStack: [[DashPage]] = []
+    private var restoring = false
+    var canUndo: Bool { !undoStack.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
+    func undo() { guard let last = undoStack.popLast() else { return }; redoStack.append(pages); restore(last) }
+    func redo() { guard let next = redoStack.popLast() else { return }; undoStack.append(pages); restore(next) }
+    private func restore(_ p: [DashPage]) {
+        restoring = true; pages = p; restoring = false
+        current = min(current, pages.count - 1)
+        objectWillChange.send()
+    }
     @Published var current = 0
 
     private static let key = "dashPagesV4"
@@ -167,6 +187,25 @@ final class DashStore: ObservableObject {
         if let i = pages[ci].widgets.firstIndex(where: { $0.id == id }) { pages[ci].widgets[i].size = s }
     }
     func remove(_ id: UUID) { pages[ci].widgets.removeAll { $0.id == id } }
+
+    /// Copy a tile to another page (the original stays where it is).
+    @discardableResult func copyWidget(_ id: UUID, toPage target: Int) -> String? {
+        guard pages.indices.contains(target) else { return nil }
+        for p in pages.indices {
+            if let w = pages[p].widgets.first(where: { $0.id == id }) {
+                var c = w; c.id = UUID()
+                pages[target].widgets.append(c)
+                return "Copied \(Self.title(w)) to \(pages[target].name)"
+            }
+        }
+        return nil
+    }
+
+    func deletePage(_ i: Int) {
+        guard pages.count > 1, pages.indices.contains(i) else { return }
+        pages.remove(at: i)
+        current = min(current >= i ? max(0, current - 1) : current, pages.count - 1)
+    }
 
     /// Save a tile's own setting (a Doppler card's radar and product, e.g. "KMLB|N0S").
     func setCustom(_ id: UUID, _ value: String) {
@@ -247,6 +286,14 @@ struct MyDashboard: View {
                     }
                 } label: { Label("Layouts", systemImage: "rectangle.3.group") }
             }
+            ToolbarItem {
+                Button { withAnimation(.snappy) { dash.undo() } } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                    .keyboardShortcut("z", modifiers: .command).disabled(!dash.canUndo).help("Undo (Cmd+Z)")
+            }
+            ToolbarItem {
+                Button { withAnimation(.snappy) { dash.redo() } } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
+                    .keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!dash.canRedo).help("Redo (Shift+Cmd+Z)")
+            }
             ToolbarItem { Button { adding = true } label: { Label("Add widget", systemImage: "plus") } }
             ToolbarItem { Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") } }
         }
@@ -274,6 +321,11 @@ struct MyDashboard: View {
                 Button(dash.pages[i].name) { if let m = dash.moveWidget(w.id, toPage: i) { showToast(m) } }
             }
         } label: { Label("Move to page", systemImage: "rectangle.portrait.and.arrow.right") }
+        Menu {
+            ForEach(dash.pages.indices.filter { $0 < DashStore.limit(store.effectivePlan) }, id: \.self) { i in
+                Button(i == dash.current ? "\(dash.pages[i].name) (this page)" : dash.pages[i].name) { if let m = dash.copyWidget(w.id, toPage: i) { showToast(m) } }
+            }
+        } label: { Label("Copy to page", systemImage: "plus.square.on.square") }
         Button { dash.moveToEdge(w.id, top: true) } label: { Label("Move to top", systemImage: "arrow.up.to.line") }
         Button { dash.moveToEdge(w.id, top: false) } label: { Label("Move to bottom", systemImage: "arrow.down.to.line") }
         Button(role: .destructive) { withAnimation { dash.remove(w.id) } } label: { Label("Remove", systemImage: "trash") }
@@ -309,6 +361,14 @@ struct MyDashboard: View {
                             return true
                         } isTargeted: { on in
                             if on { dropTab = i } else if dropTab == i { dropTab = nil }
+                        }
+                        .contextMenu {
+                            Button { dash.current = i; editing = true } label: { Label("Rename or edit", systemImage: "pencil") }
+                            if dash.pages.count > 1 {
+                                Button(role: .destructive) { withAnimation { dash.deletePage(i) }; showToast("Page deleted. Cmd+Z to undo.") } label: {
+                                    Label("Delete page", systemImage: "trash")
+                                }
+                            }
                         }
                 }
                 Button {
@@ -409,7 +469,7 @@ struct WidgetCard: View {
         case .spaghetti: return AnyView(SpaghettiWidget())
         case .modelLinks: return AnyView(ModelLinksWidget())
         case .scales: return AnyView(ScalesWidget())
-        case .buoycam: return AnyView(BuoyCamWidget(place: p))
+        case .buoycam: return AnyView(BuoyCamWidget(place: p, saved: widget.customURL, onPick: { DashStore.shared.setCustom(widget.id, $0) }))
         case .links: return AnyView(LinksWidget(place: p))
         default: return nil
         }
@@ -445,7 +505,7 @@ struct WidgetCard: View {
                             Text(i == start ? "Now" : Fmt.hour(f.hourly.time[i], offset: off)).font(.caption.bold())
                             Image(systemName: WX.symbol(f.hourly.weather_code[i] ?? 3, day: (f.hourly.is_day[i] ?? 1) == 1)).symbolRenderingMode(.multicolor)
                             Text(Fmt.temp(f.hourly.temperature_2m[i])).font(.callout.weight(.semibold))
-                            Text((f.hourly.precipitation_probability[i] ?? 0) >= 10 ? "\(f.hourly.precipitation_probability[i] ?? 0)%" : " ")
+                            Text("\(f.hourly.precipitation_probability[i] ?? 0)%")
                                 .font(.caption2).foregroundStyle(.blue)
                         }
                     }
@@ -458,7 +518,7 @@ struct WidgetCard: View {
                     HStack {
                         Text(i == 0 ? "Today" : Fmt.weekday(f.daily.time[i], offset: off)).frame(width: 52, alignment: .leading)
                         Image(systemName: WX.symbol(f.daily.weather_code[i] ?? 3)).symbolRenderingMode(.multicolor).frame(width: 28)
-                        Text((f.daily.precipitation_probability_max[i] ?? 0) >= 10 ? "\(f.daily.precipitation_probability_max[i] ?? 0)%" : "")
+                        Text("\(f.daily.precipitation_probability_max[i] ?? 0)%")
                             .font(.caption).foregroundStyle(.blue).frame(width: 36)
                         Spacer()
                         Text(Fmt.temp(f.daily.temperature_2m_min[i])).foregroundStyle(.secondary)
@@ -504,7 +564,7 @@ struct DopplerWidget: View {
     let place: Place
     var saved: String? = nil                 // "KMLB|N0B"; nil = nearest radar
     var onPick: (String) -> Void = { _ in }
-    @StateObject private var radar = RadarController()
+    @StateObject private var radar = RadarController(raw: true)
     @State private var sites: [RadarService.Site] = []
 
     private var parts: [String] { (saved ?? "").components(separatedBy: "|") }
@@ -562,7 +622,7 @@ struct DopplerWidget: View {
 /// Small radar map for the dashboard. Shows the selected place; pan and zoom freely.
 struct MiniRadar: View {
     @EnvironmentObject var state: AppState
-    @StateObject private var radar = RadarController()
+    @StateObject private var radar = RadarController(raw: true)   // just the raw radar feed
     var body: some View {
         RadarMap(radar: radar, center: state.place.coordinate, recenterToken: 0) { _ in }
             .task { await radar.load() }

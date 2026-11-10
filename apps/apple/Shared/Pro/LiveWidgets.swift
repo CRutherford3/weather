@@ -41,7 +41,8 @@ struct RemoteImage: View {
     private func load() async {
         guard let url else { failed = true; return }
         var req = URLRequest(url: url)
-        req.setValue(AppConfig.userAgent, forHTTPHeaderField: "User-Agent")
+        // NWS asks apps to identify themselves; some other image hosts block unknown app names
+        if url.host()?.hasSuffix("weather.gov") == true { req.setValue(AppConfig.userAgent, forHTTPHeaderField: "User-Agent") }
         guard let data = try? await URLSession.shared.data(for: req).0 else { failed = true; return }
         let decoded = await Task.detached(priority: .userInitiated) { Self.decode(data) }.value
         if decoded.0.isEmpty { failed = true } else { frames = decoded.0; delays = decoded.1 }
@@ -529,24 +530,46 @@ struct ScalesWidget: View {
     }
 }
 
-/// The live camera on the buoy nearest the selected place (like the website's marine card).
+/// A live buoy camera: the nearest one, or any camera you pick from the menu (each card remembers its own).
 struct BuoyCamWidget: View {
     let place: Place
-    @State private var cam: LiveData.BuoyCam?
-    @State private var miles: Int = 0
+    var saved: String? = nil                 // NDBC station id; nil = nearest
+    var onPick: (String) -> Void = { _ in }
+    @State private var cams: [(cam: LiveData.BuoyCam, miles: Int)] = []
     @State private var done = false
+
+    private var chosen: (cam: LiveData.BuoyCam, miles: Int)? {
+        if let id = saved, !id.isEmpty, let c = cams.first(where: { $0.cam.id == id }) { return c }
+        return cams.first.flatMap { $0.miles < 300 ? $0 : nil }
+    }
+
     var body: some View {
-        Group {
-            if let c = cam, let u = c.url {
-                BuoyCamView(title: "\(c.name) · \(miles) mi", url: u, page: c.page, time: c.time)
-            } else if done { Text("No buoy camera reporting within 300 miles.").foregroundStyle(.secondary) }
-            else { ProgressView().frame(maxWidth: .infinity, minHeight: 120) }
+        VStack(alignment: .leading, spacing: 8) {
+            Menu {
+                Button("Nearest to \(place.name)") { onPick("") }
+                Divider()
+                ForEach(cams, id: \.cam.id) { c in
+                    Button("\(c.cam.name) · \(c.miles) mi") { onPick(c.cam.id) }
+                }
+            } label: {
+                Label(chosen.map { "\($0.cam.name) · \($0.miles) mi" } ?? "Choose a buoy camera", systemImage: "video")
+                    .font(.caption).lineLimit(1)
+            }
+            .fixedSize()
+            if let c = chosen, let u = c.cam.url {
+                BuoyCamView(title: "", url: u, page: c.cam.page, time: c.cam.time)
+            } else if done {
+                Text("No buoy camera within 300 miles. Pick any camera from the menu above.").foregroundStyle(.secondary)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+            }
         }
         .task(id: place.id) {
             let here = CLLocation(latitude: place.lat, longitude: place.lon)
-            let best = await LiveData.buoyCams().map { ($0, here.distance(from: CLLocation(latitude: $0.lat, longitude: $0.lon)) / 1609.34) }
-                .min { $0.1 < $1.1 }
-            if let b = best, b.1 < 300 { cam = b.0; miles = Int(b.1) }
+            cams = await LiveData.buoyCams()
+                .map { ($0, Int(here.distance(from: CLLocation(latitude: $0.lat, longitude: $0.lon)) / 1609.34)) }
+                .sorted { $0.1 < $1.1 }
+                .map { (cam: $0.0, miles: $0.1) }
             done = true
         }
     }

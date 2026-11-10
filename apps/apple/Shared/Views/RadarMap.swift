@@ -447,15 +447,17 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     @Published var index = 0
     @Published var playing = true
     @Published var layers: Set<MapLayer> {
-        didSet { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") }
+        didSet { if persist { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") } }
     }
+    /// The main radar screen saves its choices; dashboard radar cards don't.
+    let persist: Bool
     @Published var opacity: Double = 0.75
     /// Hi-Def: light speckle removed and edges smoothed (like MyRadar). Off = Standard (raw radar).
     @Published var hiDef: Bool = UserDefaults.standard.object(forKey: "radarHiDef") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(hiDef, forKey: "radarHiDef") }
+        didSet { if persist { UserDefaults.standard.set(hiDef, forKey: "radarHiDef") } }
     }
     @Published var basemap: Basemap = Basemap(rawValue: UserDefaults.standard.string(forKey: "basemap") ?? "") ?? .auto {
-        didSet { UserDefaults.standard.set(basemap.rawValue, forKey: "basemap") }
+        didSet { if persist { UserDefaults.standard.set(basemap.rawValue, forKey: "basemap") } }
     }
     /// Last hour, past 48 hours (Pro), or future radar (Pro).
     @Published private(set) var mode: RadarMode = .recent
@@ -467,7 +469,15 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     private var timer: Timer?
     private var refreshTimer: Timer?
 
+    /// A raw radar for dashboard cards: just the radar (no buoys, sites or other layers), Standard style, not saved.
+    init(raw: Bool) {
+        persist = false
+        layers = [.radar]
+        if raw { hiDef = false }
+    }
+
     init() {
+        persist = true
         if let saved = UserDefaults.standard.stringArray(forKey: "mapLayers") {
             layers = Set(saved.compactMap(MapLayer.init(rawValue:)))
         } else {

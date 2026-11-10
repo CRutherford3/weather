@@ -156,6 +156,7 @@ struct LayersSheet: View {
                     Section { Button { showPlans = true } label: { Label("Unlock every layer with the Pro Radar Pack", systemImage: "lock.open.fill") } }
                 }
             }
+            .formStyle(.grouped)   // scrollable list on Mac (the default Mac form style doesn't scroll)
             .navigationTitle("Layers")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
