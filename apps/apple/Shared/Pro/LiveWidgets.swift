@@ -475,12 +475,14 @@ struct LinksWidget: View {
             ("GOES Satellite Viewer", "https://www.star.nesdis.noaa.gov/GOES/"), ("Mike's Weather Page", "https://www.mikesweatherpage.com/"),
             ("Windy", "https://www.windy.com/"),
         ]
-        VStack(alignment: .leading, spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 16)], alignment: .leading, spacing: 6) {
             ForEach(links, id: \.1) { l in
-                if let u = URL(string: l.1) { Link(destination: u) { HStack { Text(l.0); Spacer(); Image(systemName: "arrow.up.right") } } }
+                if let u = URL(string: l.1) {
+                    Link(destination: u) { HStack { Text(l.0).lineLimit(1); Spacer(); Image(systemName: "arrow.up.right").font(.caption2) } }
+                }
             }
         }
-        .font(.callout)
+        .font(.footnote)
         .task(id: place.id) { if let c = await LiveData.nwsPoint(place)?.cwa, !c.isEmpty { office = c } }
     }
 }

@@ -4,12 +4,19 @@ import SwiftUI
 struct ForecastView: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var store: Store
+    /// Beside the radar map: show the spot under the crosshair while you pan, like the weather card.
+    var followMap = false
+
+    private var following: Bool { followMap && state.center != nil }
+    private var forecast: Forecast? { following ? state.centerForecast : state.forecast }
+    private var alerts: [WeatherAlert] { following ? state.centerAlerts : state.alerts }
+    private var placeName: String { following ? (state.center?.name ?? state.place.name) : state.place.name }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let f = state.forecast {
-                    ForEach(state.alerts) { a in AlertRow(alert: a) }
+                if let f = forecast {
+                    ForEach(alerts) { a in AlertRow(alert: a) }
                     hero(f)
                     if store.effectivePlan == .free { AdBanner(kind: .banner) }
                     section("Next 48 hours") { hourly(f) }
@@ -28,7 +35,7 @@ struct ForecastView: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await state.refresh() }
-        .navigationTitle(state.place.name)
+        .navigationTitle(placeName)
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {

@@ -91,7 +91,7 @@ struct ProWorkspace: View {
                         }
                     if panelOpen {
                         resizeHandle
-                        NavigationStack { ForecastView() }
+                        NavigationStack { ForecastView(followMap: true) }
                             .frame(width: panelWidth)
                             .overlay(alignment: .topTrailing) {
                                 Button { withAnimation(.snappy) { panelOpen = false } } label: {

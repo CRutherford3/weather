@@ -206,7 +206,7 @@ export const WIDGETS = {
 
 // Ready-made layouts (like the sections on spaghettimodels.com). Each can become its own dashboard page.
 export const TEMPLATES = {
-  mine: { name: 'My Weather', w: [['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'], ['doppler', 'l'], ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'm']] },
+  mine: { name: 'My Dashboard', w: [['now', 'm'], ['alerts', 'm'], ['nowcast', 'm'], ['hourly', 'xl'], ['minimap', 'l'], ['daily', 'l'], ['doppler', 'l'], ['nhc_atl7', 'm'], ['spc_d1', 'm'], ['goes_se_loop', 'm'], ['wpc_qpf7', 'm'], ['nwsloop', 'm'], ['links', 'xl']] },
   tropics: { name: 'Tropics', pro: true, w: [['storms', 'l'], ['spaghetti', 'xl'], ['nhc_atl7', 'm'], ['nhc_atl2', 'm'], ['nhc_epac7', 'm'], ['goes_taw_loop', 'l'], ['goes_gm', 'm'], ['goes_car_loop', 'm'], ['goes_pr', 'm'], ['cimss_shear', 'm'], ['cimss_steer', 'm'], ['cimss_vort', 'm'], ['cimss_sal', 'm'], ['sst_atl', 'm'], ['ssta_atl', 'm'], ['ssta_glob', 'm'], ['opc_atl', 'm'], ['goes_fd', 'm'], ['models_links', 'm'], ['scales', 'l']] },
   severe: { name: 'Severe', pro: true, w: [['alerts', 'm'], ['spc_d1', 'm'], ['spc_torn', 'm'], ['spc_hail', 'm'], ['spc_wind', 'm'], ['spc_ww', 'm'], ['spc_md', 'm'], ['radar_conus', 'l'], ['site_loop', 'm'], ['goes_glm_loop', 'm'], ['meso_scp', 'm'], ['meso_stp', 'm'], ['meso_cape', 'm'], ['meso_shr', 'm'], ['spc_rpt', 'm'], ['spc_d2', 'm'], ['spc_d3', 'm'], ['spc_d48', 'm'], ['nws_haz', 'l'], ['hailhist', 'l'], ['scales', 'l']] },
   rain: { name: 'Rain & Winter', w: [['wpc_sfc', 'l'], ['ncfc1', 'm'], ['ncfc2', 'm'], ['ncfc3', 'm'], ['wpc_qpf1', 'm'], ['wpc_qpf2', 'm'], ['wpc_qpf3', 'm'], ['wpc_qpf5', 'm'], ['wpc_qpf7', 'm'], ['wpc_ero', 'm'], ['wpc_ero2', 'm'], ['wpc_ero3', 'm'], ['cpc_610t', 'm'], ['cpc_610p', 'm'], ['cpc_814t', 'm'], ['cpc_814p', 'm'], ['cpc_34t', 'm'], ['cpc_30t', 'm'], ['usdm', 'm']] },
@@ -227,7 +227,16 @@ const DEFAULT_LAYOUT = defaultLayout();
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 // Pages: [{ id, name, layout }]. Migrates the old single layout.
-let pages = store.get('dashPages', null) || [{ id: uid(), name: 'My Weather', layout: store.get('dash', null) || DEFAULT_LAYOUT }];
+let pages = store.get('dashPages', null) || [{ id: uid(), name: 'My Dashboard', layout: store.get('dash', null) || DEFAULT_LAYOUT }];
+// One-time update: "My Weather" is now "My Dashboard", with Weather Links full width along the bottom
+if (!store.get('dashMig1', false)) {
+  for (const p of pages) {
+    if (p.name === 'My Weather') p.name = 'My Dashboard';
+    const i = p.layout.findIndex((w) => w.type === 'links');
+    if (i >= 0) { const [w] = p.layout.splice(i, 1); w.size = 'xl'; p.layout.push(w); }
+  }
+  store.set('dashPages', pages); store.set('dashMig1', true);
+}
 let cur = Math.min(store.get('dashPage', 0), pages.length - 1);
 let layout = pages[cur].layout;
 let editing = false, ctx = {}, sortable, miniMaps = [], refreshTimer, dopTimers = [];

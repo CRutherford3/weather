@@ -98,6 +98,17 @@ final class DashStore: ObservableObject {
         if let d = UserDefaults.standard.data(forKey: Self.key),
            let p = try? JSONDecoder().decode([DashPage].self, from: d), !p.isEmpty {
             pages = p
+            // one-time update: "My Weather" is now "My Dashboard", with Weather Links full width along the bottom
+            if !UserDefaults.standard.bool(forKey: "dashMig1") {
+                for i in pages.indices {
+                    if pages[i].name == "My Weather" { pages[i].name = "My Dashboard" }
+                    if let j = pages[i].widgets.firstIndex(where: { $0.kind == "links" }) {
+                        var w = pages[i].widgets.remove(at: j); w.size = .full; pages[i].widgets.append(w)
+                    }
+                }
+                UserDefaults.standard.set(true, forKey: "dashMig1")
+                save()
+            }
         } else {
             pages = Self.websiteLayout()
         }

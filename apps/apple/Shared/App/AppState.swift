@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     /// Weather at the map crosshair (nil when the map is centered on `place`).
     @Published var center: Place?
     @Published var centerForecast: Forecast?
+    @Published var centerAlerts: [WeatherAlert] = []
     @Published var cardCollapsed: Bool { didSet { UserDefaults.standard.set(cardCollapsed, forKey: "cardCollapsed") } }
     /// True when the home place should track the device location (until the user picks a different place).
     @Published var followMe: Bool { didSet { UserDefaults.standard.set(followMe, forKey: "followMe") } }
@@ -93,7 +94,9 @@ final class AppState: ObservableObject {
             let name = await WeatherService.shared.placeName(c.latitude, c.longitude)
             let p = Place(name: name, lat: c.latitude, lon: c.longitude)
             guard let f = try? await WeatherService.shared.forecast(for: p, units: units), !Task.isCancelled else { return }
-            center = p; centerForecast = f
+            let a = await WeatherService.shared.alerts(for: p)
+            guard !Task.isCancelled else { return }
+            center = p; centerForecast = f; centerAlerts = a
         }
     }
 

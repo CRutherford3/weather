@@ -8,6 +8,7 @@ struct RadarScreen: View {
     @State private var recenter = 0
     @State private var showLayers = false
     @State private var camera: BuoyCamSheet?
+    @State private var showPlans = false
     var compact = true   // phone layout (card on top, dock at the bottom)
 
     var body: some View {
@@ -35,6 +36,7 @@ struct RadarScreen: View {
         .onChange(of: state.place) { _, _ in recenter += 1 }
         .sheet(isPresented: $showLayers) { LayersSheet(radar: radar).environmentObject(store) }
         .sheet(item: $camera) { $0 }
+        .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
     }
 
     private var dock: some View {
@@ -46,12 +48,27 @@ struct RadarScreen: View {
             HStack(spacing: 6) {
                 Image(systemName: "dot.radiowaves.left.and.right")
                 Text(radar.layers.contains(.radar) ? "Hi-Def Radar" : "Radar Off").font(.subheadline.weight(.semibold))
+                if radar.mode != .recent { Text("· \(radar.mode.title)").font(.subheadline) }
                 Spacer()
             }
             .foregroundStyle(.secondary)
             HStack {
                 Button { radar.playing.toggle() } label: { Image(systemName: radar.playing ? "pause.fill" : "play.fill") }
-                Text(radar.currentTime.map { $0.formatted(date: .omitted, time: .shortened) } ?? "--").monospacedDigit()
+                timeLabel
+                Menu {
+                    ForEach(RadarMode.allCases, id: \.self) { m in
+                        Button {
+                            if m != .recent && !proRadar { showPlans = true } else { radar.setMode(m) }
+                        } label: {
+                            if radar.mode == m { Label(m.title, systemImage: "checkmark") }
+                            else { Text(m == .recent ? m.title : "\(m.title)\(proRadar ? "" : " (Pro)")") }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.title3)
+                }
+                .fixedSize()
+                .help("Past 48 hours and future radar")
                 Spacer()
                 Button { showLayers = true } label: { Label("Layers", systemImage: "square.3.layers.3d") }
                 Button { recenter += 1; state.center = nil } label: { Label("Home", systemImage: "location") }
@@ -61,6 +78,24 @@ struct RadarScreen: View {
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    /// Past 48 hours and future radar come with Pro or the Radar Pack.
+    private var proRadar: Bool { store.radarPack || store.effectivePlan >= .pro }
+
+    @ViewBuilder private var timeLabel: some View {
+        if let t = radar.currentTime {
+            HStack(spacing: 6) {
+                if radar.currentIsFuture {
+                    Text("FUTURE").font(.caption2.bold()).padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.25), in: RoundedRectangle(cornerRadius: 4)).foregroundStyle(.purple)
+                }
+                Text(radar.mode == .history ? t.formatted(.dateTime.weekday(.abbreviated).hour().minute()) : t.formatted(date: .omitted, time: .shortened))
+                    .monospacedDigit()
+            }
+        } else {
+            Text("--")
+        }
     }
 }
 

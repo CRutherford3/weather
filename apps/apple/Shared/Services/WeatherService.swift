@@ -70,25 +70,74 @@ struct WeatherService {
     }
 }
 
-/// Radar loop frames from Iowa State's NEXRAD mosaic tiles (same source as the website).
-enum RadarService {
-    struct Frame: Identifiable { let id: Int; let time: Date; let template: String }
+/// What the radar loop shows.
+enum RadarMode: String, CaseIterable {
+    case recent, history, future
+    var title: String {
+        switch self {
+        case .recent: return "Last hour"
+        case .history: return "Past 48 hours"
+        case .future: return "Future radar"
+        }
+    }
+}
 
-    static func frames() async -> [Frame] {
+/// Radar loop frames as whole images for the area on screen, from Iowa State's NEXRAD mosaic
+/// (the same radar as the website) and, for future radar, the NOAA HRRR model's forecast radar.
+enum RadarService {
+    /// `template` holds {bbox} (EPSG:3857 meters), {w} and {h}.
+    struct Frame: Identifiable { let id: Int; let time: Date; let template: String; var future = false }
+
+    private static let iso: ISO8601DateFormatter = ISO8601DateFormatter()
+
+    /// Time of the newest radar mosaic.
+    static func latest() async -> Date {
         struct TMS: Decodable { struct S: Decodable { let id: String?; let utc_valid: String? }; let services: [S]? }
-        var base = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 300).rounded(.down) * 300 - 300)
         if let url = URL(string: "https://mesonet.agron.iastate.edu/json/tms.json"),
            let data = try? await URLSession.shared.data(from: url).0,
            let tms = try? JSONDecoder().decode(TMS.self, from: data),
            let s = tms.services?.first(where: { ($0.id ?? "").lowercased().contains("n0q") }), let v = s.utc_valid,
-           let d = ISO8601DateFormatter().date(from: v) {
-            base = d
+           let d = iso.date(from: v) {
+            return d
         }
-        let bust = Int(Date().timeIntervalSince1970 / 300)
-        return stride(from: 50, through: 0, by: -5).enumerated().map { i, m in
-            let layer = m == 0 ? "nexrad-n0q-900913" : String(format: "nexrad-n0q-900913-m%02dm", m)
-            return Frame(id: i, time: base.addingTimeInterval(TimeInterval(-m * 60)),
-                         template: "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/\(layer)/{z}/{x}/{y}.png?_=\(bust)")
+        return Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 300).rounded(.down) * 300 - 300)
+    }
+
+    private static func observed(_ t: Date) -> String {
+        "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=nexrad-n0q-wmst&STYLES=&SRS=EPSG:3857&BBOX={bbox}&WIDTH={w}&HEIGHT={h}&FORMAT=image/png&TRANSPARENT=true&TIME=\(iso.string(from: t))"
+    }
+
+    static func frames(_ mode: RadarMode = .recent) async -> [Frame] {
+        let base = await latest()
+        switch mode {
+        case .recent:
+            // last hour, every 5 minutes
+            return stride(from: 55, through: 0, by: -5).enumerated().map { i, m in
+                let t = base.addingTimeInterval(TimeInterval(-m * 60))
+                return Frame(id: i, time: t, template: observed(t))
+            }
+        case .history:
+            // past 48 hours, every hour, ending with the latest scan
+            let hour = Date(timeIntervalSince1970: (base.timeIntervalSince1970 / 3600).rounded(.down) * 3600)
+            var times = (1...47).reversed().map { hour.addingTimeInterval(TimeInterval(-$0 * 3600)) }
+            times.append(hour); if base > hour { times.append(base) }
+            return times.enumerated().map { Frame(id: $0.offset, time: $0.element, template: observed($0.element)) }
+        case .future:
+            // now, then the HRRR forecast every 30 minutes for about 8 hours
+            var out = [Frame(id: 0, time: base, template: observed(base))]
+            guard let url = URL(string: "https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_1080.json"),
+                  let data = try? await URLSession.shared.data(from: url).0,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let s = j["model_init_utc"] as? String, let initT = iso.date(from: s) else { return out }
+            let now = Date()
+            for f in stride(from: 0, through: 1080, by: 30) {
+                let valid = initT.addingTimeInterval(TimeInterval(f * 60))
+                guard valid > now.addingTimeInterval(-600), valid < now.addingTimeInterval(8.5 * 3600) else { continue }
+                out.append(Frame(id: out.count, time: valid,
+                                 template: String(format: "https://mesonet.agron.iastate.edu/cgi-bin/wms/hrrr/refd.cgi?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=refd_%04d&STYLES=&SRS=EPSG:3857&BBOX={bbox}&WIDTH={w}&HEIGHT={h}&FORMAT=image/png&TRANSPARENT=true", f),
+                                 future: true))
+            }
+            return out
         }
     }
 }

@@ -220,8 +220,9 @@ body.panel-open .panel { transform: none; }
 .widget .hero-temp { font-size: 56px; }
 .widget .hero { flex-direction: column; align-items: flex-start; } .widget .hero-side { text-align: left; }
 .w-s .tiles, .w-m .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.link-list { display: grid; }
-.link-list a { display: flex; justify-content: space-between; padding: 9px 2px; border-bottom: 1px solid var(--line); color: var(--text); font-size: 14px; }
+.link-list { display: grid; column-gap: 18px; }
+.link-list a { display: flex; justify-content: space-between; padding: 6px 2px; border-bottom: 1px solid var(--line); color: var(--text); font-size: 13px; }
+.w-xl .link-list, .w-l .link-list { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
 .link-list a span { color: var(--muted); }
 .link-row { display: flex; gap: 14px; margin-top: 8px; font-size: 13.5px; }
 .big-link { display: block; padding: 18px; text-align: center; background: var(--card2); border-radius: 12px; font-weight: 700; }

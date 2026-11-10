@@ -336,6 +336,45 @@ final class WxPoint: NSObject, MKAnnotation {
     }
 }
 
+// MARK: - Radar image overlay
+
+/// The radar is drawn as one image per frame covering the area on screen (like most radar apps), so
+/// switching frames never shows half-loaded tiles. The overlay covers the world; the renderer draws
+/// whichever image it was last given, at that image's own position.
+final class RadarImageOverlay: NSObject, MKOverlay {
+    let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+    let boundingMapRect = MKMapRect.world
+}
+
+final class RadarImageRenderer: MKOverlayRenderer {
+    private let lock = NSLock()
+    private var image: CGImage?
+    private var imageRect = MKMapRect.null
+
+    func show(_ img: CGImage, _ r: MKMapRect) {
+        lock.lock(); image = img; imageRect = r; lock.unlock()
+        setNeedsDisplay()
+    }
+    func clear() { lock.lock(); image = nil; lock.unlock(); setNeedsDisplay() }
+
+    override func canDraw(_ mapRect: MKMapRect, zoomScale: MKZoomScale) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return image != nil && mapRect.intersects(imageRect)
+    }
+
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
+        lock.lock(); let img = image, r0 = imageRect; lock.unlock()
+        guard let img else { return }
+        let r = rect(for: r0)
+        ctx.interpolationQuality = .none
+        ctx.saveGState()
+        ctx.translateBy(x: r.minX, y: r.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(img, in: CGRect(origin: .zero, size: r.size))
+        ctx.restoreGState()
+    }
+}
+
 // MARK: - Controller
 
 /// Plays the radar loop and holds the chosen layers. Shared by iPhone, iPad and Mac.
@@ -348,7 +387,9 @@ final class RadarController: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") }
     }
     @Published var opacity: Double = 0.75
-    /// Set by the map: whether a frame's tiles have finished downloading.
+    /// Last hour, past 48 hours (Pro), or future radar (Pro).
+    @Published private(set) var mode: RadarMode = .recent
+    /// Set by the map: whether a frame's image has finished downloading.
     var isReady: ((Int) -> Bool)?
     private var waits = 0
     private var timer: Timer?
@@ -362,11 +403,20 @@ final class RadarController: ObservableObject, @unchecked Sendable {
         }
     }
 
+    func setMode(_ m: RadarMode) {
+        mode = m
+        Task { await load() }
+    }
+
     func load() async {
-        let f = await RadarService.frames()
+        let m = await MainActor.run { mode }
+        let f = await RadarService.frames(m)
         await MainActor.run {
+            guard m == self.mode else { return }
             self.frames = f
-            self.index = max(0, f.count - 1)
+            // past radar starts at the newest frame; future radar starts at "now"
+            self.index = m == .future ? 0 : max(0, f.count - 1)
+            self.playing = true
             self.startTimer()
             // new radar scans arrive every 5 minutes
             if self.refreshTimer == nil {
@@ -379,10 +429,12 @@ final class RadarController: ObservableObject, @unchecked Sendable {
 
     func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: mode == .history ? 0.3 : 0.55, repeats: true) { [weak self] _ in
             guard let self, self.playing, !self.frames.isEmpty else { return }
             // pause briefly on the latest frame
             if self.index == self.frames.count - 1 && Int(Date().timeIntervalSince1970 * 2) % 4 != 0 { return }
+            // future radar: pause on "now" too
+            if self.mode == .future && self.index == 0 && Int(Date().timeIntervalSince1970 * 2) % 3 != 0 { return }
             let next = (self.index + 1) % self.frames.count
             // hold the current frame (up to about 3 seconds) until the next one has loaded
             if let ready = self.isReady, !ready(next), self.waits < 6 { self.waits += 1; return }
@@ -392,6 +444,7 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     }
 
     var currentTime: Date? { frames.indices.contains(index) ? frames[index].time : nil }
+    var currentIsFuture: Bool { frames.indices.contains(index) && frames[index].future }
 }
 
 #if os(macOS)
@@ -446,16 +499,16 @@ struct RadarMap: PlatformViewRepresentable {
         weak var map: MKMapView?
         var lastRecenter = 0
 
-        // Radar loop: one overlay per frame, but only the frame being shown is on the map.
-        // Changing frames adds the next one on top and removes the old one a moment later, so there is
-        // never a blank gap. All frames' tiles are downloaded together (see RadarFrameGroup).
-        private var frameOverlays: [Int: WxTileOverlay] = [:]
-        private let frameGroup = RadarFrameGroup()
-        private var frameIndex: [ObjectIdentifier: Int] = [:]
-        private var frameRenderers: [ObjectIdentifier: MKTileOverlayRenderer] = [:]
+        // Radar loop: one image per frame for the area on screen. If the next frame isn't downloaded yet,
+        // the current one stays up, so the loop never goes blank.
+        private let radarOverlay = RadarImageOverlay()
+        private var radarRenderer: RadarImageRenderer?
+        private var frameImages: [Int: (CGImage, MKMapRect)] = [:]
         private var frameKey = ""
-        private var shownOverlay: WxTileOverlay?
+        private var frameCount = 0
+        private var shownFrame = -1
         private var shownOpacity = -1.0
+        private var radarTask: Task<Void, Never>?
 
         // other tile layers
         private var tileOverlays: [MapLayer: WxTileOverlay] = [:]
@@ -484,26 +537,21 @@ struct RadarMap: PlatformViewRepresentable {
             let L = parent.radar.layers
 
             // radar frames (rebuilt when the frame list changes)
-            let key = L.contains(.radar) ? parent.radar.frames.map(\.template).joined() : ""
-            if key != frameKey {
-                map.removeOverlays(Array(frameOverlays.values))
-                frameOverlays = [:]; frameIndex = [:]; frameRenderers = [:]; shownOverlay = nil
-                frameKey = key
-                frameGroup.set([])
-                if L.contains(.radar) {
-                    var all: [WxTileOverlay] = []
-                    for (i, f) in parent.radar.frames.enumerated() {
-                        let o = WxTileOverlay(TileSource(template: f.template, nativeMaxZ: 10, opacity: parent.radar.opacity))
-                        o.group = frameGroup
-                        o.frame = i
-                        frameOverlays[i] = o
-                        frameIndex[ObjectIdentifier(o)] = i
-                        all.append(o)
-                    }
-                    frameGroup.set(all)
-                    let g = frameGroup
-                    parent.radar.isReady = { [weak g] i in g?.isReady(i) ?? true }
+            let on = map.overlays.contains { $0 === radarOverlay }
+            if L.contains(.radar) {
+                if !on { map.addOverlay(radarOverlay, level: .aboveRoads) }
+                let key = parent.radar.frames.map(\.template).joined()
+                if key != frameKey {
+                    frameKey = key
+                    if parent.radar.frames.count != frameCount { frameImages = [:]; shownFrame = -1 }   // new mode: start fresh
+                    frameCount = parent.radar.frames.count
+                    parent.radar.isReady = { [weak self] i in self?.frameImages[i] != nil }
+                    loadRadarImages()
                 }
+            } else if on {
+                map.removeOverlay(radarOverlay)
+                radarTask?.cancel(); frameImages = [:]; frameKey = ""; frameCount = 0; shownFrame = -1
+                radarRenderer?.clear()
             }
 
             // tile layers
@@ -563,24 +611,63 @@ struct RadarMap: PlatformViewRepresentable {
         }
 
         func showFrame(_ i: Int) {
-            guard let map, let o = frameOverlays[i] else { return }
+            guard let r = radarRenderer else { return }
             let op = parent.radar.opacity
-            if o === shownOverlay {
-                if op != shownOpacity, let r = frameRenderers[ObjectIdentifier(o)] {
-                    shownOpacity = op; r.alpha = CGFloat(op); r.setNeedsDisplay()
-                }
-                return
-            }
-            shownOpacity = op
-            if let r = frameRenderers[ObjectIdentifier(o)] { r.alpha = CGFloat(op) }
-            if !map.overlays.contains(where: { $0 === o }) { map.addOverlay(o, level: .aboveRoads) }
-            let old = shownOverlay
-            shownOverlay = o
-            // keep the previous frame underneath until the new one has drawn
-            if let old {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self, weak map] in
-                    guard let self, let map, old !== self.shownOverlay else { return }
-                    map.removeOverlay(old)
+            if op != shownOpacity { shownOpacity = op; r.alpha = CGFloat(op); r.setNeedsDisplay() }
+            guard i != shownFrame, let (img, rect) = frameImages[i] else { return }   // not loaded yet: keep the current picture
+            shownFrame = i
+            r.show(img, rect)
+        }
+
+        nonisolated static func fetchImage(_ url: URL?) async -> CGImage? {
+            guard let url, let data = try? await WxTileOverlay.session.data(from: url).0,
+                  let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+            return CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+        }
+
+        /// Download every frame's image for the area on screen (plus a margin so small pans don't need a reload).
+        func loadRadarImages() {
+            guard let map, parent.radar.layers.contains(.radar), !parent.radar.frames.isEmpty else { return }
+            radarTask?.cancel()
+            let v = map.visibleMapRect
+            let r = v.insetBy(dx: -v.size.width * 0.3, dy: -v.size.height * 0.3).intersection(MKMapRect.world)
+            guard !r.isNull, r.size.width > 0, r.size.height > 0 else { return }
+            // corners in Web Mercator meters for the WMS request
+            let nw = MKMapPoint(x: r.minX, y: r.minY).coordinate, se = MKMapPoint(x: r.maxX, y: r.maxY).coordinate
+            func mx(_ lon: Double) -> Double { lon * 20037508.342789244 / 180 }
+            func my(_ lat: Double) -> Double { let l = min(85, max(-85, lat)) * .pi / 180; return log(tan(.pi / 4 + l / 2)) * 6378137 }
+            let bbox = String(format: "%.0f,%.0f,%.0f,%.0f", mx(nw.longitude), my(se.latitude), mx(se.longitude), my(nw.latitude))
+            let aspect = r.size.width / r.size.height
+            let w = Int(aspect >= 1 ? 1400 : 1400 * aspect), h = Int(aspect >= 1 ? 1400 / aspect : 1400)
+            let frames = parent.radar.frames
+            let current = parent.radar.index
+            // newest / current frame first, so something useful shows right away
+            let order = frames.indices.sorted { abs($0 - current) < abs($1 - current) }
+            radarTask = Task { [weak self] in
+                await withTaskGroup(of: (Int, CGImage?).self) { g in
+                    var next = 0
+                    let url: (Int) -> URL? = { i in
+                        URL(string: frames[i].template.replacingOccurrences(of: "{bbox}", with: bbox)
+                            .replacingOccurrences(of: "{w}", with: String(w)).replacingOccurrences(of: "{h}", with: String(h)))
+                    }
+                    while next < min(6, order.count) {   // a few at a time
+                        let i = order[next], u = url(i); next += 1
+                        g.addTask { (i, await Coordinator.fetchImage(u)) }
+                    }
+                    for await (i, img) in g {
+                        if Task.isCancelled { break }
+                        if let img {
+                            await MainActor.run {
+                                guard let self else { return }
+                                self.frameImages[i] = (img, r)
+                                if i == self.parent.radar.index { self.shownFrame = -1; self.showFrame(i) }
+                            }
+                        }
+                        if next < order.count {
+                            let j = order[next], u = url(j); next += 1
+                            g.addTask { (j, await Coordinator.fetchImage(u)) }
+                        }
+                    }
                 }
             }
         }
@@ -957,15 +1044,17 @@ struct RadarMap: PlatformViewRepresentable {
 
         // MARK: delegate
         func mapView(_ m: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if overlay === radarOverlay {
+                let r = RadarImageRenderer(overlay: overlay)
+                r.alpha = CGFloat(parent.radar.opacity)
+                radarRenderer = r
+                shownFrame = -1
+                showFrame(parent.radar.index)
+                return r
+            }
             if let t = overlay as? MKTileOverlay {
                 let r = MKTileOverlayRenderer(tileOverlay: t)
-                let id = ObjectIdentifier(t)
-                if frameIndex[id] != nil {
-                    r.alpha = CGFloat(parent.radar.opacity)
-                    frameRenderers[id] = r
-                } else {
-                    r.alpha = CGFloat(tileOpacity[id] ?? 0.7)
-                }
+                r.alpha = CGFloat(tileOpacity[ObjectIdentifier(t)] ?? 0.7)
                 return r
             }
             let s = shapes[ObjectIdentifier(overlay)] ?? GeoStyle(stroke: .gray, fill: .gray, fillAlpha: 0.15, width: 1, dashed: false)
@@ -1016,6 +1105,7 @@ struct RadarMap: PlatformViewRepresentable {
             viewWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
+                self.loadRadarImages()
                 for l in self.parent.radar.layers where l.followsView && !self.geoLoading.contains(l) {
                     self.geoLoading.insert(l)
                     Task { await self.load(l) }
