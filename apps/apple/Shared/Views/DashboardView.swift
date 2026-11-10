@@ -70,8 +70,8 @@ struct DashboardView: View {
                 Label("Add to \(dash.page.name)", systemImage: "plus.square.on.square")
             }
             Menu {
-                ForEach(pages, id: \.offset) { i, page in
-                    Button(page.name) { add(p, page: i, size: .medium) }
+                ForEach(pages, id: \.offset) { item in
+                    Button(item.element.name) { add(p, page: item.offset, size: .medium) }
                 }
             } label: { Label("Add to page", systemImage: "square.grid.2x2") }
             Menu {
