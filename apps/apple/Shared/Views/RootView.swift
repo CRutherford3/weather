@@ -28,9 +28,11 @@ struct PhoneTabs: View {
             }
             .tabItem { Label("Forecast", systemImage: "cloud.sun") }
             NavigationStack {
-                DashboardView().toolbar { searchButton }
+                MyDashboard().toolbar { searchButton }
             }
             .tabItem { Label("Dashboard", systemImage: "square.grid.2x2") }
+            NavigationStack { RouteView() }
+                .tabItem { Label("Route", systemImage: "car.fill") }
             NavigationStack { SettingsView() }
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }

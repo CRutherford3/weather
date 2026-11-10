@@ -81,7 +81,7 @@ struct DashboardView: View {
             .padding(.vertical)
         }
         .refreshable { bust += 1 }
-        .navigationTitle(only ?? "Dashboard")
+        .navigationTitle(only ?? "All Maps")
         .sheet(item: $zoom) { p in ZoomedProduct(product: p, bust: bust) }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
     }

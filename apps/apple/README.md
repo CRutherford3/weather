@@ -53,11 +53,13 @@ If Xcode shows a build error, copy the error text and send it to me.
 - Radar loop (NEXRAD mosaic) on Apple Maps, infrared satellite, NWS warning polygons, lightning (Plus)
 - Weather card that follows the crosshair, minimize to a pill, save places
 - Forecast: alerts, now, 48 hours, 16 days, details
-- Dashboard of live NOAA/NHC/SPC/WPC maps (Pro maps locked for Free/Plus)
+- Customizable dashboard: pages of widgets (forecast, alerts, live radar, any map product, custom images and links), add, remove, resize, reorder. Pages: Free 1, Plus 5, Pro unlimited
+- Route Weather (Pro): Apple Maps driving route with the forecast at each checkpoint for your arrival time, plus alerts along the way
+- All Maps: grid of live NOAA/NHC/SPC/WPC maps (Pro maps locked for Free/Plus)
 - Free / Plus / Pro with StoreKit 2, restore purchases
 - Ad slots showing a house ad (Google AdMob can be added once you have an AdMob account; AdMob has no Mac support)
 
-Next: the rest of the website's layers (hail, marine, snow, tropics, outages, traffic), route weather, home-screen widgets,
+Next: the rest of the website's layers (hail, marine, snow, tropics, outages, traffic), home-screen widgets,
 severe-weather notifications, Apple TV.
 
 **Note:** lightning strikes come from the website's `/api/lightning`. While the website is private behind the Netlify login,

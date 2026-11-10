@@ -12,7 +12,7 @@ struct ProWorkspace: View {
     @AppStorage("panelOpen") private var panelOpen = true
     @State private var dragStart: Double?
 
-    enum Item: Hashable { case radar, forecast, dashboard, section(String), settings }
+    enum Item: Hashable { case radar, forecast, dashboard, allMaps, route, section(String), settings }
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +20,9 @@ struct ProWorkspace: View {
                 Section("Weather") {
                     Label("Radar", systemImage: "dot.radiowaves.left.and.right").tag(Item.radar)
                     Label("Forecast", systemImage: "cloud.sun").tag(Item.forecast)
-                    Label("All maps", systemImage: "square.grid.2x2").tag(Item.dashboard)
+                    Label("Dashboard", systemImage: "square.grid.2x2").tag(Item.dashboard)
+                    Label("Route Weather", systemImage: "car.fill").tag(Item.route)
+                    Label("All maps", systemImage: "map").tag(Item.allMaps)
                 }
                 Section("Map collections") {
                     ForEach(Products.sections) { s in Label(s.id, systemImage: icon(s.id)).tag(Item.section(s.id)) }
@@ -109,7 +111,9 @@ struct ProWorkspace: View {
                     }
             }
         case .forecast: NavigationStack { ForecastView() }
-        case .dashboard: NavigationStack { DashboardView() }
+        case .dashboard: NavigationStack { MyDashboard() }
+        case .route: NavigationStack { RouteView() }
+        case .allMaps: NavigationStack { DashboardView() }
         case .section(let s): NavigationStack { DashboardView(only: s) }
         case .settings: NavigationStack { SettingsView() }
         }
