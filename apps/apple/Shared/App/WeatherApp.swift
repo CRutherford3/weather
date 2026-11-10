@@ -12,7 +12,7 @@ struct WeatherApp: App {
                 .environmentObject(store)
                 .tint(Color("AccentColor"))
                 .preferredColorScheme(state.appearance.scheme)
-                .task { await state.refresh() }
+                .task { await state.start() }
         }
         #if os(macOS)
         .defaultSize(width: 1280, height: 820)

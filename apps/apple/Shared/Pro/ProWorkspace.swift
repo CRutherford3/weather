@@ -8,6 +8,9 @@ struct ProWorkspace: View {
     @State private var selection: Item? = .radar
     @State private var showSearch = false
     @State private var showPlans = false
+    @AppStorage("panelWidth") private var panelWidth: Double = 380
+    @AppStorage("panelOpen") private var panelOpen = true
+    @State private var dragStart: Double?
 
     enum Item: Hashable { case radar, forecast, dashboard, section(String), settings }
 
@@ -48,14 +51,54 @@ struct ProWorkspace: View {
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
     }
 
+    /// Drag left or right to resize the forecast panel. Double-click / double-tap resets it.
+    private var resizeHandle: some View {
+        ZStack {
+            Rectangle().fill(.separator).frame(width: 1)
+            Capsule().fill(.secondary).frame(width: 5, height: 44)
+        }
+        .frame(width: 12)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { v in
+                    if dragStart == nil { dragStart = panelWidth }
+                    panelWidth = min(720, max(280, (dragStart ?? panelWidth) - v.translation.width))
+                }
+                .onEnded { _ in dragStart = nil }
+        )
+        .onTapGesture(count: 2) { withAnimation(.snappy) { panelWidth = 380 } }
+        #if os(macOS)
+        .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+        #endif
+        .help("Drag to resize")
+    }
+
     @ViewBuilder private var detail: some View {
         switch selection ?? .radar {
         case .radar:
             if store.effectivePlan >= .pro {
                 HStack(spacing: 0) {
                     RadarScreen(compact: false)
-                    Divider()
-                    NavigationStack { ForecastView() }.frame(width: 380)
+                        .overlay(alignment: .topTrailing) {
+                            if !panelOpen {
+                                Button { withAnimation(.snappy) { panelOpen = true } } label: { Label("Forecast", systemImage: "sidebar.right") }
+                                    .buttonStyle(.borderedProminent).padding(12)
+                            }
+                        }
+                    if panelOpen {
+                        resizeHandle
+                        NavigationStack { ForecastView() }
+                            .frame(width: panelWidth)
+                            .overlay(alignment: .topTrailing) {
+                                Button { withAnimation(.snappy) { panelOpen = false } } label: {
+                                    Image(systemName: "xmark.circle.fill").font(.title2).symbolRenderingMode(.hierarchical)
+                                }
+                                .buttonStyle(.plain).padding(10).help("Close the forecast panel")
+                            }
+                            .transition(.move(edge: .trailing))
+                    }
                 }
             } else {
                 // Free and Plus get the map; the side-by-side workspace is a Pro feature

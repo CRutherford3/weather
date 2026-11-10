@@ -19,6 +19,8 @@ final class AppState: ObservableObject {
     @Published var center: Place?
     @Published var centerForecast: Forecast?
     @Published var cardCollapsed: Bool { didSet { UserDefaults.standard.set(cardCollapsed, forKey: "cardCollapsed") } }
+    /// True when the home place should track the device location (until the user picks a different place).
+    @Published var followMe: Bool { didSet { UserDefaults.standard.set(followMe, forKey: "followMe") } }
     /// Light, dark, or follow the device setting.
     @Published var appearance: Appearance { didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") } }
 
@@ -30,6 +32,7 @@ final class AppState: ObservableObject {
         favorites = Self.load("favorites") ?? []
         units = Units(rawValue: UserDefaults.standard.string(forKey: "units") ?? "") ?? .imperial
         cardCollapsed = UserDefaults.standard.bool(forKey: "cardCollapsed")
+        followMe = UserDefaults.standard.object(forKey: "followMe") as? Bool ?? true
         appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system
     }
 
@@ -48,16 +51,34 @@ final class AppState: ObservableObject {
         loading = false
     }
 
+    /// App launch: go to the current location when following it, otherwise the last place.
+    func start() async {
+        if followMe, await locate() { return }
+        await refresh()
+    }
+
+    /// A place the user picked by hand (search or a saved place).
     func select(_ p: Place) {
+        followMe = false
+        show(p)
+    }
+
+    private func show(_ p: Place) {
         place = p; center = nil; centerForecast = nil
         forecast = nil; alerts = []
         Task { await refresh() }
     }
 
     func useMyLocation() async {
-        guard let loc = await location.current() else { error = "Location isn't available. Check Settings > Privacy."; return }
+        followMe = true
+        if !(await locate()) { error = "Location isn't available. Turn it on in Settings > Privacy & Security > Location Services." }
+    }
+
+    @discardableResult private func locate() async -> Bool {
+        guard let loc = await location.current() else { return false }
         let name = await WeatherService.shared.placeName(loc.coordinate.latitude, loc.coordinate.longitude)
-        select(Place(name: name, lat: loc.coordinate.latitude, lon: loc.coordinate.longitude))
+        show(Place(name: name, lat: loc.coordinate.latitude, lon: loc.coordinate.longitude))
+        return true
     }
 
     /// Called when the map stops moving. Loads weather for the crosshair unless it's on the selected place.
