@@ -243,7 +243,8 @@ final class WxPoint: NSObject, MKAnnotation {
 // MARK: - Controller
 
 /// Plays the radar loop and holds the chosen layers. Shared by iPhone, iPad and Mac.
-final class RadarController: ObservableObject {
+/// Only ever touched on the main thread (timers and SwiftUI), so marking it Sendable is safe.
+final class RadarController: ObservableObject, @unchecked Sendable {
     @Published var frames: [RadarService.Frame] = []
     @Published var index = 0
     @Published var playing = true
