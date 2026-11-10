@@ -61,7 +61,7 @@ struct RadarScreen: View {
                     Text("\(s.id) \(s.productName)").font(.subheadline.weight(.semibold))
                     Text("· \(s.name)").font(.subheadline).lineLimit(1)
                 } else {
-                    Text(radar.layers.contains(.radar) ? "Hi-Def Radar" : "Radar Off").font(.subheadline.weight(.semibold))
+                    Text(radar.layers.contains(.radar) ? (radar.hiDef ? "Hi-Def Radar" : "Standard Radar") : "Radar Off").font(.subheadline.weight(.semibold))
                     if radar.mode != .recent { Text("· \(radar.mode.title)").font(.subheadline) }
                 }
                 Spacer()
@@ -144,6 +144,10 @@ struct LayersSheet: View {
                     Section(g.rawValue) {
                         ForEach(MapLayer.allCases.filter { $0.group == g }) { l in toggle(l) }
                         if g == .radarSat {
+                            Picker("Radar style", selection: $radar.hiDef) {
+                                Text("Hi-Def (smooth)").tag(true)
+                                Text("Standard (raw)").tag(false)
+                            }
                             Slider(value: $radar.opacity, in: 0.2...1) { Text("Radar opacity") }
                         }
                     }

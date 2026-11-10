@@ -49,7 +49,7 @@ enum LocalWidget: String, CaseIterable {
         case .sun: return "Sun & Moon"
         case .radar: return "Live Radar"
         case .nowcast: return "Next 3 Hours"
-        case .doppler: return "Doppler Radar"
+        case .doppler: return "Doppler Radar (pick any radar)"
         case .aqi: return "Air Quality"
         case .nwsloop: return "Local NWS Radar Loop"
         case .nwstext: return "NWS Forecast Text"
@@ -167,6 +167,15 @@ final class DashStore: ObservableObject {
         if let i = pages[ci].widgets.firstIndex(where: { $0.id == id }) { pages[ci].widgets[i].size = s }
     }
     func remove(_ id: UUID) { pages[ci].widgets.removeAll { $0.id == id } }
+
+    /// Save a tile's own setting (a Doppler card's radar and product, e.g. "KMLB|N0S").
+    func setCustom(_ id: UUID, _ value: String) {
+        for p in pages.indices {
+            if let i = pages[p].widgets.firstIndex(where: { $0.id == id }), pages[p].widgets[i].customURL != value {
+                pages[p].widgets[i].customURL = value
+            }
+        }
+    }
 
     /// Move a tile from whatever page it's on to another page (dropped on that page's tab).
     @discardableResult func moveWidget(_ id: UUID, toPage target: Int) -> String? {
@@ -390,7 +399,9 @@ struct WidgetCard: View {
         case .nowcast: return AnyView(NowcastWidget(place: p))
         case .aqi: return AnyView(AQIWidget(place: p))
         case .nwsloop: return AnyView(NWSLoopWidget(place: p))
-        case .doppler: return AnyView(DopplerWidget(place: p).frame(height: widget.size == .full || widget.size == .large ? 380 : 280))
+        case .doppler:
+            return AnyView(DopplerWidget(place: p, saved: widget.customURL, onPick: { DashStore.shared.setCustom(widget.id, $0) })
+                .frame(height: widget.size == .full || widget.size == .large ? 400 : 300))
         case .nwstext: return AnyView(NWSTextWidget(place: p))
         case .afd: return AnyView(AFDWidget(place: p))
         case .models: return AnyView(ModelsWidget(place: p, units: state.units))
@@ -441,7 +452,7 @@ struct WidgetCard: View {
                 }
             }
         case .daily:
-            let n = min(f.daily.time.count, widget.size == .small ? 5 : 10)
+            let n = min(f.daily.time.count, widget.size == .small ? 7 : 16)   // all 16 days
             VStack(spacing: 6) {
                 ForEach(0..<n, id: \.self) { i in
                     HStack {
@@ -487,30 +498,64 @@ struct WidgetCard: View {
     }
 }
 
-/// Your nearest NEXRAD radar on its own, with a Reflectivity / Velocity switch (the website's Doppler card).
+/// One NEXRAD radar on its own, with a Reflectivity / Velocity switch (the website's Doppler card).
+/// Each card remembers its own radar, so you can add one card per radar you follow.
 struct DopplerWidget: View {
     let place: Place
+    var saved: String? = nil                 // "KMLB|N0B"; nil = nearest radar
+    var onPick: (String) -> Void = { _ in }
     @StateObject private var radar = RadarController()
-    @State private var velocity = false
+    @State private var sites: [RadarService.Site] = []
+
+    private var parts: [String] { (saved ?? "").components(separatedBy: "|") }
+    private var savedId: String? { parts.first.flatMap { $0.isEmpty ? nil : $0 } }
+    private var savedProduct: String { parts.count > 1 && parts[1] == "N0S" ? "N0S" : "N0B" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(radar.site.map { "\($0.id) · \($0.name)" } ?? "Finding the nearest radar…").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Menu {
+                    Button("Nearest to \(place.name)") { Task { await choose(id: nil, product: savedProduct) } }
+                    Divider()
+                    ForEach(sites.prefix(60), id: \.id) { s in
+                        Button("\(s.id) · \(s.name)") { Task { await choose(id: s.id, product: savedProduct) } }
+                    }
+                } label: {
+                    Label(radar.site.map { "\($0.id) · \($0.name)" } ?? "Finding the radar…", systemImage: "dot.radiowaves.up.forward")
+                        .font(.caption).lineLimit(1)
+                }
+                .fixedSize()
                 Spacer()
-                Picker("", selection: $velocity) { Text("Reflectivity").tag(false); Text("Velocity").tag(true) }
-                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                Picker("", selection: Binding(get: { savedProduct == "N0S" }, set: { v in Task { await choose(id: savedId, product: v ? "N0S" : "N0B") } })) {
+                    Text("Reflectivity").tag(false); Text("Velocity").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
             }
             RadarMap(radar: radar, center: radar.site.map { .init(latitude: $0.lat, longitude: $0.lon) } ?? place.coordinate,
-                     recenterToken: radar.site == nil ? 0 : 1, onCenterChange: { _ in })
+                     recenterToken: radar.site.map { $0.id.hashValue } ?? 0, onCenterChange: { _ in })
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
-        .task(id: place.id) { await pick() }
-        .onChange(of: velocity) { _, _ in Task { await pick() } }
+        .task(id: "\(place.id)|\(saved ?? "")") { await apply() }
     }
-    private func pick() async {
-        guard var s = await LiveData.nearestSite(place) else { return }
-        s.product = velocity ? "N0S" : "N0B"
-        radar.setSite(s)
+
+    /// Radars sorted by distance from the selected place, for the picker.
+    private func loadSites() async {
+        guard sites.isEmpty else { return }
+        let all = await LiveData.radarSites()
+        let k = cos(place.lat * .pi / 180)
+        sites = all.sorted { pow($0.lat - place.lat, 2) + pow(($0.lon - place.lon) * k, 2) < pow($1.lat - place.lat, 2) + pow(($1.lon - place.lon) * k, 2) }
+    }
+
+    private func apply() async {
+        await loadSites()
+        let s = savedId.flatMap { id in sites.first { $0.id == id } } ?? sites.first
+        guard var s else { return }
+        s.product = savedProduct
+        if radar.site != s { radar.setSite(s) }
+    }
+
+    private func choose(id: String?, product: String) async {
+        onPick(id.map { "\($0)|\(product)" } ?? "|\(product)")
     }
 }
 

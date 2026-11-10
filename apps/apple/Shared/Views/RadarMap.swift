@@ -2,6 +2,7 @@ import SwiftUI
 import MapKit
 import ImageIO
 import QuartzCore
+import CoreImage
 
 #if os(macOS)
 typealias PColor = NSColor
@@ -421,6 +422,10 @@ final class RadarController: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") }
     }
     @Published var opacity: Double = 0.75
+    /// Hi-Def: light speckle removed and edges smoothed (like MyRadar). Off = Standard (raw radar).
+    @Published var hiDef: Bool = UserDefaults.standard.object(forKey: "radarHiDef") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(hiDef, forKey: "radarHiDef") }
+    }
     @Published var basemap: Basemap = Basemap(rawValue: UserDefaults.standard.string(forKey: "basemap") ?? "") ?? .auto {
         didSet { UserDefaults.standard.set(basemap.rawValue, forKey: "basemap") }
     }
@@ -562,6 +567,7 @@ struct RadarMap: PlatformViewRepresentable {
         private var frameKey = ""
         private var frameCount = 0
         private var wasSite = false
+        private var wasHiDef = true
         private var shownFrame = -1
         private var shownOpacity = -1.0
         private var radarTask: Task<Void, Never>?
@@ -587,6 +593,8 @@ struct RadarMap: PlatformViewRepresentable {
         private var strikes: [MKPointAnnotation] = []
         private var strikesTimer: Timer?
         private var lastStrikeT: Double = 0
+        private var recentStrikes: [[Double]] = []
+        private var flashTimer: Timer?
         private var flashGen = 0   // bumps when lightning is turned off, cancelling scheduled flashes
 
         init(_ p: RadarMap) { parent = p }
@@ -627,12 +635,13 @@ struct RadarMap: PlatformViewRepresentable {
             let on = map.overlays.contains { $0 === radarOverlay }
             if L.contains(.radar) {
                 if !on { map.addOverlay(radarOverlay, level: .aboveRoads) }
-                let key = parent.radar.frames.map { $0.template + ($0.tiles ?? "") }.joined()
+                let key = parent.radar.frames.map { $0.template + ($0.tiles ?? "") }.joined() + (parent.radar.hiDef ? "#hd" : "")
                 if key != frameKey {
                     frameKey = key
                     let isSite = parent.radar.frames.first?.tiles != nil
                     // new mode, or switching to / from / between single radars: start fresh
-                    if parent.radar.frames.count != frameCount || isSite || wasSite { frameImages = [:]; shownFrame = -1 }
+                    if parent.radar.frames.count != frameCount || isSite || wasSite || parent.radar.hiDef != wasHiDef { frameImages = [:]; shownFrame = -1 }
+                    wasHiDef = parent.radar.hiDef
                     wasSite = isSite
                     frameCount = parent.radar.frames.count
                     parent.radar.isReady = { [weak self] i in self?.frameImages[i] != nil }
@@ -697,7 +706,8 @@ struct RadarMap: PlatformViewRepresentable {
                 strikesTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in Task { await self?.loadStrikes() } }
             } else if !L.contains(.lightning), let t = strikesTimer {
                 t.invalidate(); strikesTimer = nil; map.removeAnnotations(strikes); strikes = []
-                flashGen += 1; lastStrikeT = 0
+                flashGen += 1; lastStrikeT = 0; recentStrikes = []
+                flashTimer?.invalidate(); flashTimer = nil
                 map.removeAnnotations(map.annotations.filter { $0 is FlashAnnotation })
             }
         }
@@ -773,6 +783,34 @@ struct RadarMap: PlatformViewRepresentable {
             return (out, MKMapRect(x: Double(x0) * ts, y: Double(y0) * ts, width: Double(cols) * ts, height: Double(rows) * ts))
         }
 
+        nonisolated static func radarImage(_ url: URL?, hiDef: Bool) async -> CGImage? {
+            guard let img = await fetchImage(url) else { return nil }
+            return hiDef ? (Self.hiDef(img) ?? img) : img
+        }
+
+        private static let ciContext = CIContext(options: [.cacheIntermediates: false])
+
+        /// Hi-Def look: drop the light-blue returns (about 5 to 15 dBZ: drizzle, clutter and speckle, which
+        /// MyRadar hides too), then soften the edges so storms look smooth instead of pixelated.
+        nonisolated static func hiDef(_ img: CGImage) -> CGImage? {
+            let w = img.width, h = img.height
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let data = ctx.data else { return nil }
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+            let p = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+            var i = 0
+            let n = w * h * 4
+            while i < n {
+                if p[i + 3] > 0 && p[i] < 80 && p[i + 2] > 140 { p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0 }
+                i += 4
+            }
+            guard let cleaned = ctx.makeImage() else { return nil }
+            let rect = CGRect(x: 0, y: 0, width: w, height: h)
+            let blurred = CIImage(cgImage: cleaned).clampedToExtent().applyingGaussianBlur(sigma: 1.1).cropped(to: rect)
+            return ciContext.createCGImage(blurred, from: rect)
+        }
+
         nonisolated static func fetchImage(_ url: URL?) async -> CGImage? {
             guard let url, let data = try? await WxTileOverlay.session.data(from: url).0,
                   let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
@@ -802,6 +840,7 @@ struct RadarMap: PlatformViewRepresentable {
             let current = parent.radar.index
             // newest / current frame first, so something useful shows right away
             let order = frames.indices.sorted { abs($0 - current) < abs($1 - current) }
+            let hd = parent.radar.hiDef
             radarTask = Task { [weak self] in
                 await withTaskGroup(of: (Int, CGImage?).self) { g in
                     var next = 0
@@ -811,7 +850,7 @@ struct RadarMap: PlatformViewRepresentable {
                     }
                     while next < min(8, order.count) {   // a few at a time
                         let i = order[next], u = url(i); next += 1
-                        g.addTask { (i, await Coordinator.fetchImage(u)) }
+                        g.addTask { (i, await Coordinator.radarImage(u, hiDef: hd)) }
                     }
                     for await (i, img) in g {
                         if Task.isCancelled { break }
@@ -824,7 +863,7 @@ struct RadarMap: PlatformViewRepresentable {
                         }
                         if next < order.count {
                             let j = order[next], u = url(j); next += 1
-                            g.addTask { (j, await Coordinator.fetchImage(u)) }
+                            g.addTask { (j, await Coordinator.radarImage(u, hiDef: hd)) }
                         }
                     }
                 }
@@ -1209,14 +1248,40 @@ struct RadarMap: PlatformViewRepresentable {
                 return p
             }
             map.addAnnotations(strikes)
+            recentStrikes = r.f.filter { $0.count >= 3 && now - $0[2] < 15 * 60_000 }
             scheduleFlashes(r.f, now: now)
+            if flashTimer == nil {
+                // keep the storms "alive": recent strikes in view re-flash at random, newer ones more often
+                flashTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { [weak self] _ in
+                    Task { @MainActor in self?.flashTick() }
+                }
+            }
+        }
+
+        @MainActor private func flashTick() {
+            guard let map, !recentStrikes.isEmpty else { return }
+            let view = map.visibleMapRect
+            let now = Date().timeIntervalSince1970 * 1000
+            let inView = recentStrikes.filter { view.contains(MKMapPoint(CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]))) }
+            guard !inView.isEmpty else { return }
+            let count = min(3, max(1, inView.count / 120))
+            for _ in 0..<count {
+                // favour the newest strikes: pick the youngest of three random ones
+                let s = (0..<3).map { _ in inView.randomElement()! }.max { $0[2] < $1[2] }!
+                let ageMin = (now - s[2]) / 60_000
+                if ageMin > 5 && Double.random(in: 0...1) < 0.6 { continue }
+                let a = FlashAnnotation(CLLocationCoordinate2D(latitude: s[1], longitude: s[0]))
+                map.addAnnotation(a)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak map] in map?.removeAnnotation(a) }
+            }
         }
 
         /// Replays new strikes as flashes spread over the next minute, so the map looks live between updates.
         /// The first time, the last two minutes of strikes are replayed.
         @MainActor private func scheduleFlashes(_ f: [[Double]], now: Double) {
             guard let map else { return }
-            let since = lastStrikeT > 0 ? lastStrikeT : now - 120_000
+            let first = lastStrikeT == 0
+            let since = first ? now - 600_000 : lastStrikeT
             let fresh = f.filter { $0.count >= 3 && $0[2] > since }
             lastStrikeT = max(lastStrikeT, f.compactMap { $0.count >= 3 ? $0[2] : nil }.max() ?? lastStrikeT)
             let view = map.visibleMapRect
@@ -1225,7 +1290,7 @@ struct RadarMap: PlatformViewRepresentable {
             let gen = flashGen
             for s in shown {
                 let c = CLLocationCoordinate2D(latitude: s[1], longitude: s[0])
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 0..<58)) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 0..<(first ? 20 : 58))) { [weak self] in
                     guard let self, self.flashGen == gen, let map = self.map else { return }
                     let a = FlashAnnotation(c)
                     map.addAnnotation(a)
@@ -1303,7 +1368,7 @@ struct RadarMap: PlatformViewRepresentable {
             let v = m.dequeueReusableAnnotationView(withIdentifier: "strike") ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "strike")
             v.annotation = annotation
             let age = Int((annotation.subtitle ?? nil) ?? "0") ?? 0
-            v.image = Self.symbol(age < 5 ? "bolt.fill" : "circle.fill", color: age < 5 ? .systemYellow : (age < 15 ? .systemOrange : .systemRed), size: age < 5 ? 14 : 6)
+            v.image = Self.symbol(age < 5 ? "bolt.fill" : "plus", color: age < 5 ? .systemYellow : (age < 15 ? .systemOrange : PColor.systemRed.withAlphaComponent(0.7)), size: age < 5 ? 13 : 8)
             v.canShowCallout = false
             return v
         }
