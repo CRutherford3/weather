@@ -1531,11 +1531,23 @@ struct RadarMap: PlatformViewRepresentable {
             let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .bold).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
             return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
         }
-        /// Micro Doppler site: a little radar dish on a dark disc.
+        /// Doppler site: a NEXRAD radome on its tower, on a dark disc ringed in the layer color.
         static func dish(_ color: NSColor, _ size: CGFloat) -> NSImage? {
-            let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [color, NSColor(white: 0.08, alpha: 0.85)]))
-            return NSImage(systemSymbolName: "antenna.radiowaves.left.and.right.circle.fill", accessibilityDescription: "Radar site")?.withSymbolConfiguration(cfg)
+            let d = size * 1.7
+            return NSImage(size: NSSize(width: d, height: d), flipped: false) { r in
+                let disc = NSBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
+                let current = size > 15   // the radar being shown: filled purple, white ring
+                (current ? NSColor(red: 0.55, green: 0.36, blue: 0.96, alpha: 1) : NSColor(white: 0.06, alpha: 0.9)).setFill(); disc.fill()
+                (current ? NSColor.white : color).setStroke(); disc.lineWidth = 1.6; disc.stroke()
+                if let img = NSImage(named: "RadomeTower") {
+                    let ir = r.insetBy(dx: d * 0.2, dy: d * 0.18)
+                    let tinted = NSImage(size: ir.size, flipped: false) { tr in
+                        img.draw(in: tr); NSColor.white.set(); tr.fill(using: .sourceAtop); return true
+                    }
+                    tinted.draw(in: ir)
+                }
+                return true
+            }
         }
         static func dot(_ color: NSColor, _ size: CGFloat) -> NSImage {
             NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
@@ -1561,11 +1573,18 @@ struct RadarMap: PlatformViewRepresentable {
             UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: .bold))?
                 .withTintColor(color, renderingMode: .alwaysOriginal)
         }
-        /// Micro Doppler site: a little radar dish on a dark disc.
+        /// Doppler site: a NEXRAD radome on its tower, on a dark disc ringed in the layer color.
         static func dish(_ color: UIColor, _ size: CGFloat) -> UIImage? {
-            let cfg = UIImage.SymbolConfiguration(pointSize: size, weight: .semibold)
-                .applying(UIImage.SymbolConfiguration(paletteColors: [color, UIColor(white: 0.08, alpha: 0.85)]))
-            return UIImage(systemName: "antenna.radiowaves.left.and.right.circle.fill", withConfiguration: cfg)
+            let d = size * 1.7
+            return UIGraphicsImageRenderer(size: CGSize(width: d, height: d)).image { _ in
+                let r = CGRect(x: 0, y: 0, width: d, height: d)
+                let disc = UIBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
+                let current = size > 15   // the radar being shown: filled purple, white ring
+                (current ? UIColor(red: 0.55, green: 0.36, blue: 0.96, alpha: 1) : UIColor(white: 0.06, alpha: 0.9)).setFill(); disc.fill()
+                (current ? UIColor.white : color).setStroke(); disc.lineWidth = 1.6; disc.stroke()
+                UIImage(named: "RadomeTower")?.withTintColor(.white, renderingMode: .alwaysOriginal)
+                    .draw(in: r.insetBy(dx: d * 0.2, dy: d * 0.18))
+            }
         }
         static func dot(_ color: UIColor, _ size: CGFloat) -> UIImage {
             UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in

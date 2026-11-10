@@ -61,7 +61,7 @@ struct RadarScreen: View {
                        in: 0...Double(max(1, radar.frames.count - 1)), step: 1)
             }
             HStack(spacing: 6) {
-                Image(systemName: "dot.radiowaves.left.and.right")
+                Image("Radome")
                 if let s = radar.site {
                     Text("\(s.id) \(s.productName)").font(.subheadline.weight(.semibold))
                     Text("· \(s.name)").font(.subheadline).lineLimit(1)
@@ -99,7 +99,7 @@ struct RadarScreen: View {
                     }
                     Button {
                         if proRadar { radar.layers.insert(.sites) } else { showPlans = true }
-                    } label: { Label("Doppler radar sites\(proRadar ? "" : " (Pro)")", systemImage: "dot.radiowaves.up.forward") }
+                    } label: { Label("Doppler radar sites\(proRadar ? "" : " (Pro)")", image: "Radome") }
                     Divider()
                     ForEach(RadarMode.allCases, id: \.self) { m in
                         Button {
@@ -241,7 +241,7 @@ struct LayersSheet: View {
             ForEach(MapLayer.allCases.filter(\.isMarineSpace)) { l in toggle(l) }
         } label: {
             HStack {
-                Label("Pro: Radar, Marine & Space", systemImage: "dot.radiowaves.left.and.right").font(.headline)
+                Label("Pro: Radar, Marine & Space", image: "Radome").font(.headline)
                 Spacer()
                 if store.hasDoppler { if let s = radar.site { Text(s.id).font(.caption).foregroundStyle(.secondary) } }
                 else { TierBadge(plan: .pro) }

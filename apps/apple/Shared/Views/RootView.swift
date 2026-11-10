@@ -22,7 +22,7 @@ struct PhoneTabs: View {
     var body: some View {
         TabView {
             RadarScreen(compact: true)
-                .tabItem { Label("Radar", systemImage: "dot.radiowaves.left.and.right") }
+                .tabItem { Label("Radar", image: "Radome") }
             NavigationStack {
                 ForecastView().toolbar { searchButton }
             }

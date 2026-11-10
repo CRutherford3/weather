@@ -84,7 +84,7 @@ struct PlansView: View {
     private var radarPackCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Pro Radar Pack", systemImage: "dot.radiowaves.left.and.right").font(.title2.bold())
+                Label("Pro Radar Pack", image: "Radome").font(.title2.bold())
                 Spacer()
                 Text(store.radarPackProduct?.displayPrice ?? "$6.99").font(.headline)
             }

@@ -581,7 +581,7 @@ struct DopplerWidget: View {
                         Button("\(s.id) · \(s.name)") { Task { await choose(id: s.id, product: savedProduct) } }
                     }
                 } label: {
-                    Label(radar.site.map { "\($0.id) · \($0.name)" } ?? "Finding the radar…", systemImage: "dot.radiowaves.up.forward")
+                    Label(radar.site.map { "\($0.id) · \($0.name)" } ?? "Finding the radar…", image: "Radome")
                         .font(.caption).lineLimit(1)
                 }
                 .fixedSize()

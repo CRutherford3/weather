@@ -20,7 +20,7 @@ struct ProWorkspace: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("Weather") {
-                    Label("Radar", systemImage: "dot.radiowaves.left.and.right").tag(Item.radar)
+                    Label("Radar", image: "Radome").tag(Item.radar)
                     Label("Forecast", systemImage: "cloud.sun").tag(Item.forecast)
                     Label("Dashboard", systemImage: "square.grid.2x2").tag(Item.dashboard)
                     Label("Route Weather", systemImage: "car.fill").tag(Item.route)
@@ -39,7 +39,7 @@ struct ProWorkspace: View {
                         .tag(Item.section(s.id))
                     }
                 } header: {
-                    Label("Professional Radar", systemImage: "dot.radiowaves.left.and.right")
+                    Label("Professional Radar", image: "Radome")
                 }
                 Section("My places") {
                     ForEach(state.favorites) { p in

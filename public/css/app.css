@@ -671,3 +671,4 @@ body[data-plan="pro"] .tier-badge, body[data-plan="plus"] .tier-badge.t-plus { d
 .lgroup.open .lgroup-body { display: block; }
 .lgroup.pro .lgroup-head { background: rgba(139,92,246,.10); }
 .lsub { padding-top: 12px; }
+.radome-ico { vertical-align: -3px; color: #a78bfa; }

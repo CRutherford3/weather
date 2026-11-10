@@ -444,12 +444,32 @@ export async function useSite(code, prod, tilt) {
   S.radarSrc = 'site'; S.layers.radar = true; save();
   refresh('radar'); updateDock(); if (active.sites) refresh('sites');
 }
+const RADOME_SVG = '<svg class="radome-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7.8" r="4.6" fill="currentColor" stroke="none"/><rect x="9" y="12.5" width="6" height="1.5" rx=".5" fill="currentColor" stroke="none"/><path stroke-width="1.3" d="M9.9 14 8.4 22.6M14.1 14l1.5 8.6M9.9 14l4.8 3.6M14.1 14l-4.8 3.6M9.3 17.6l6.3 5M14.7 17.6l-6.3 5M7.2 22.6h9.6"/><path stroke-width="1.5" d="M5.2 4.2a7 7 0 0 0 0 7.2M2.6 2.6a10 10 0 0 0 0 10.4M18.8 4.2a7 7 0 0 1 0 7.2M21.4 2.6a10 10 0 0 1 0 10.4"/></svg>';
+// Radar site marker: a NEXRAD radome on its lattice tower, on a dark disc (purple when it's the radar showing)
+function radomeImages() {
+  const draw = (id, ring, fill, ink) => {
+    if (map.hasImage(id)) return;
+    const S2 = 2, D = 30 * S2, c = document.createElement('canvas'); c.width = c.height = D;
+    const g = c.getContext('2d');
+    g.beginPath(); g.arc(D / 2, D / 2, D / 2 - 2 * S2, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); g.lineWidth = 2 * S2; g.strokeStyle = ring; g.stroke();
+    g.save(); g.translate(D * 0.2, D * 0.17); g.scale((D * 0.6) / 24, (D * 0.6) / 24);
+    g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = 1.5; g.lineCap = 'round';
+    g.beginPath(); g.arc(12, 7.6, 5.6, 0, Math.PI * 2); g.fill();
+    g.fillRect(8.3, 13, 7.4, 1.6);
+    g.stroke(new Path2D('M9.4 14.6 7.6 22.6M14.6 14.6l1.8 8M9.4 14.6l5.9 4M14.6 14.6l-5.9 4M8.7 18.6l7.7 4M15.3 18.6l-7.7 4M6.4 22.6h11.2'));
+    g.restore();
+    map.addImage(id, g.getImageData(0, 0, D, D), { pixelRatio: S2 });
+  };
+  draw('radome', '#a78bfa', 'rgba(11,16,32,.9)', '#f5f3ff');
+  draw('radome-on', '#ffffff', '#8b5cf6', '#ffffff');
+}
 ADD.sites = async () => {
   const list = await radarSites();
   const fc = { type: 'FeatureCollection', features: list.map((x) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [x.lon, x.lat] }, properties: { id: x.id, code: x.code, name: x.name, on: S.radarSrc === 'site' && S.site === x.code ? 1 : 0 } })) };
+  radomeImages();
   return geo('sites', fc, [
-    { type: 'circle', top: true, paint: { 'circle-radius': ['case', ['==', ['get', 'on'], 1], 9, 6], 'circle-color': ['case', ['==', ['get', 'on'], 1], '#8b5cf6', '#0b1020'], 'circle-stroke-color': ['case', ['==', ['get', 'on'], 1], '#fff', '#a78bfa'], 'circle-stroke-width': 2 } },
-    { type: 'symbol', top: true, layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.35], 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': false }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b1020', 'text-halo-width': 1.6 } },
+    { type: 'symbol', top: true, layout: { 'icon-image': ['case', ['==', ['get', 'on'], 1], 'radome-on', 'radome'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 7, 0.85, 10, 1], 'icon-allow-overlap': true } },
+    { type: 'symbol', top: true, minzoom: 6, layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.7], 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': false }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b1020', 'text-halo-width': 1.6 } },
   ], (f, ll) => {
     const p = f.properties, cur = S.radarSrc === 'site' && S.site === p.code;
     const tilted = SITE_PRODUCTS[S.siteFam]?.[1];
@@ -978,7 +998,7 @@ function openLayersSheet() {
       ? `${row(rows[0])}<div class="sheet-sub lsub">Marine & Space</div>${rows.slice(1).map(row).join('')}`
       : rows.map(row).join('');
     return `<div class="lgroup${openSet.has(g) ? ' open' : ''}${kind === 'pro' ? ' pro' : ''}" data-g="${esc(g)}">
-      <button class="lgroup-head"><span>${g}${kind === 'pro' ? ` ${badge('pro')}` : ''}</span><span class="muted small">${n ? `${n} on` : ''}</span><i class="chev">›</i></button>
+      <button class="lgroup-head"><span>${kind === 'pro' ? `${RADOME_SVG} ` : ''}${g}${kind === 'pro' ? ` ${badge('pro')}` : ''}</span><span class="muted small">${n ? `${n} on` : ''}</span><i class="chev">›</i></button>
       <div class="lgroup-body">${body}</div></div>`;
   };
   openSheet('Layers', LAYER_GROUPS.map(group).join('') +
