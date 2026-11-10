@@ -27,7 +27,7 @@ One universal SwiftUI app. iPhone gets the MyRadar-style tabs; iPad and Mac get 
    and pick your team. (Or paste your Team ID into `DEVELOPMENT_TEAM` in `project.yml` and run `xcodegen generate` again.)
 5. Pick a destination at the top (an iPhone simulator, your own iPhone, an iPad, or **My Mac**) and press **Run** (Cmd+R).
 
-Testing paid features before App Store Connect is set up: **Settings > Preview plan** (debug builds only).
+Builds run from Xcode start on **Pro** so you can test everything. Switch plans any time in **Settings > Preview plan**. App Store and TestFlight builds ignore this and use real purchases.
 
 If Xcode shows a build error, copy the error text and send it to me.
 

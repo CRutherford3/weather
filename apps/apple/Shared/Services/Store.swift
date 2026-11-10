@@ -32,7 +32,8 @@ final class Store: ObservableObject {
     init() {
         #if DEBUG
         let v = UserDefaults.standard.integer(forKey: "previewPlan")
-        if UserDefaults.standard.object(forKey: "previewPlan") != nil, v >= 0 { previewPlan = Plan(rawValue: v) }
+        if UserDefaults.standard.object(forKey: "previewPlan") != nil { previewPlan = v >= 0 ? Plan(rawValue: v) : nil }
+        else { previewPlan = .pro }   // builds run from Xcode start on Pro for testing
         #endif
         updates = Task { [weak self] in
             for await result in Transaction.updates {
