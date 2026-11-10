@@ -341,6 +341,9 @@ final class WxPoint: NSObject, MKAnnotation {
     }
 }
 
+/// Core Image context for the Hi-Def radar smoothing (a global so background image code can use it).
+let radarCIContext = CIContext(options: [.cacheIntermediates: false])
+
 /// A lightning flash that blooms and fades on the map (MyRadar style), then removes itself.
 final class FlashAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
@@ -408,6 +411,30 @@ final class RadarImageRenderer: MKOverlayRenderer {
         ctx.scaleBy(x: 1, y: -1)
         ctx.draw(img, in: CGRect(origin: .zero, size: r.size))
         ctx.restoreGState()
+    }
+}
+
+/// Map background. Auto picks Dark or Light from the app's appearance.
+enum Basemap: String, CaseIterable, Identifiable {
+    case auto, dark, light, apple, satellite
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .auto: return "Auto"
+        case .dark: return "Dark"
+        case .light: return "Light"
+        case .apple: return "Apple"
+        case .satellite: return "Satellite"
+        }
+    }
+    private static let esri = "https://services.arcgisonline.com/ArcGIS/rest/services"
+    /// Black-and-gray (or light gray) base with the place names drawn above the radar, like MyRadar.
+    var tiles: (base: String, labels: String)? {
+        switch self {
+        case .dark: return ("\(Self.esri)/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
+        case .light: return ("\(Self.esri)/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
+        default: return nil
+        }
     }
 }
 
@@ -789,7 +816,6 @@ struct RadarMap: PlatformViewRepresentable {
             return hiDef ? (Self.hiDef(img) ?? img) : img
         }
 
-        private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
         /// Hi-Def look, as close to MyRadar as we can get:
         ///  1. drop the light-blue returns (about 5 to 15 dBZ: drizzle, clutter, speckle)
@@ -835,7 +861,7 @@ struct RadarMap: PlatformViewRepresentable {
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1.9),
                 "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: -0.32),
             ]).cropped(to: rect)
-            return ciContext.createCGImage(firmed, from: rect)
+            return radarCIContext.createCGImage(firmed, from: rect)
         }
 
         nonisolated static func fetchImage(_ url: URL?) async -> CGImage? {
