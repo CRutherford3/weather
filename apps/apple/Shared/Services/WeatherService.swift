@@ -117,10 +117,10 @@ enum RadarService {
                 return Frame(id: i, time: t, template: observed(t))
             }
         case .history:
-            // past 48 hours, every hour, ending with the latest scan
-            let hour = Date(timeIntervalSince1970: (base.timeIntervalSince1970 / 3600).rounded(.down) * 3600)
-            var times = (1...47).reversed().map { hour.addingTimeInterval(TimeInterval(-$0 * 3600)) }
-            times.append(hour); if base > hour { times.append(base) }
+            // past 48 hours, every 30 minutes (smoother than hourly), ending with the latest scan
+            let half = Date(timeIntervalSince1970: (base.timeIntervalSince1970 / 1800).rounded(.down) * 1800)
+            var times = (1...95).reversed().map { half.addingTimeInterval(TimeInterval(-$0 * 1800)) }
+            times.append(half); if base > half { times.append(base) }
             return times.enumerated().map { Frame(id: $0.offset, time: $0.element, template: observed($0.element)) }
         case .future:
             // now, then the HRRR forecast every 30 minutes for about 8 hours

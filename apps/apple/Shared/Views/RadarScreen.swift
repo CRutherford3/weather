@@ -108,6 +108,12 @@ struct LayersSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Map") {
+                    Picker("Map", selection: $radar.basemap) {
+                        ForEach(Basemap.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
                 ForEach(LayerGroup.allCases) { g in
                     Section(g.rawValue) {
                         ForEach(MapLayer.allCases.filter { $0.group == g }) { l in toggle(l) }

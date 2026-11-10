@@ -375,12 +375,36 @@ final class RadarImageRenderer: MKOverlayRenderer {
         lock.lock(); let img = image, r0 = imageRect; lock.unlock()
         guard let img else { return }
         let r = rect(for: r0)
-        ctx.interpolationQuality = .none
+        ctx.interpolationQuality = .high   // smooth the radar pixels like MyRadar
         ctx.saveGState()
         ctx.translateBy(x: r.minX, y: r.maxY)
         ctx.scaleBy(x: 1, y: -1)
         ctx.draw(img, in: CGRect(origin: .zero, size: r.size))
         ctx.restoreGState()
+    }
+}
+
+/// Map background. Auto picks Dark or Light from the app's appearance.
+enum Basemap: String, CaseIterable, Identifiable {
+    case auto, dark, light, apple, satellite
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .auto: return "Auto"
+        case .dark: return "Dark"
+        case .light: return "Light"
+        case .apple: return "Apple"
+        case .satellite: return "Satellite"
+        }
+    }
+    private static let esri = "https://services.arcgisonline.com/ArcGIS/rest/services"
+    /// Black-and-gray (or light gray) base with the place names drawn above the radar, like MyRadar.
+    var tiles: (base: String, labels: String)? {
+        switch self {
+        case .dark: return ("\(Self.esri)/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
+        case .light: return ("\(Self.esri)/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
+        default: return nil
+        }
     }
 }
 
@@ -396,6 +420,9 @@ final class RadarController: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") }
     }
     @Published var opacity: Double = 0.75
+    @Published var basemap: Basemap = Basemap(rawValue: UserDefaults.standard.string(forKey: "basemap") ?? "") ?? .auto {
+        didSet { UserDefaults.standard.set(basemap.rawValue, forKey: "basemap") }
+    }
     /// Last hour, past 48 hours (Pro), or future radar (Pro).
     @Published private(set) var mode: RadarMode = .recent
     /// Set by the map: whether a frame's image has finished downloading.
@@ -408,7 +435,11 @@ final class RadarController: ObservableObject, @unchecked Sendable {
         if let saved = UserDefaults.standard.stringArray(forKey: "mapLayers") {
             layers = Set(saved.compactMap(MapLayer.init(rawValue:)))
         } else {
-            layers = [.radar, .warnings]   // default: Hi-Def radar plus warnings, like the website
+            layers = [.radar, .warnings, .lightning]   // default: Hi-Def radar, warnings and live lightning
+        }
+        if !UserDefaults.standard.bool(forKey: "lightningDefault1") {   // one-time: turn lightning on now that strikes are live
+            layers.insert(.lightning)
+            UserDefaults.standard.set(true, forKey: "lightningDefault1")
         }
     }
 
@@ -438,7 +469,7 @@ final class RadarController: ObservableObject, @unchecked Sendable {
 
     func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: mode == .history ? 0.3 : 0.55, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: mode == .history ? 0.15 : 0.5, repeats: true) { [weak self] _ in
             guard let self, self.playing, !self.frames.isEmpty else { return }
             // pause briefly on the latest frame
             if self.index == self.frames.count - 1 && Int(Date().timeIntervalSince1970 * 2) % 4 != 0 { return }
@@ -499,6 +530,7 @@ struct RadarMap: PlatformViewRepresentable {
             c.lastRecenter = recenterToken
             m.setCenter(center, animated: true)
         }
+        c.syncBasemap(context.environment.colorScheme == .dark)
         c.syncOverlays()
         c.showFrame(radar.index)
     }
@@ -518,6 +550,10 @@ struct RadarMap: PlatformViewRepresentable {
         private var shownFrame = -1
         private var shownOpacity = -1.0
         private var radarTask: Task<Void, Never>?
+
+        // map background
+        private var shownBasemap = ""
+        private var baseOverlays: [WxTileOverlay] = []
 
         // other tile layers
         private var tileOverlays: [MapLayer: WxTileOverlay] = [:]
@@ -543,6 +579,31 @@ struct RadarMap: PlatformViewRepresentable {
         private var imperial: Bool { (UserDefaults.standard.string(forKey: "units") ?? "imperial") == "imperial" }
 
         // MARK: sync
+        func syncBasemap(_ dark: Bool) {
+            guard let map else { return }
+            var b = parent.radar.basemap
+            if b == .auto { b = dark ? .dark : .light }
+            let key = "\(b.rawValue)"
+            guard key != shownBasemap else { return }
+            shownBasemap = key
+            map.removeOverlays(baseOverlays); baseOverlays = []
+            switch b {
+            case .satellite:
+                map.preferredConfiguration = MKHybridMapConfiguration(elevationStyle: .flat)
+            default:
+                map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
+            }
+            if let t = b.tiles {
+                let base = WxTileOverlay(TileSource(template: t.base, nativeMaxZ: 16, opacity: 1))
+                base.canReplaceMapContent = true
+                let labels = WxTileOverlay(TileSource(template: t.labels, nativeMaxZ: 16, opacity: 1))
+                tileOpacity[ObjectIdentifier(base)] = 1; tileOpacity[ObjectIdentifier(labels)] = 1
+                map.insertOverlay(base, at: 0, level: .aboveRoads)
+                map.addOverlay(labels, level: .aboveLabels)
+                baseOverlays = [base, labels]
+            }
+        }
+
         func syncOverlays() {
             guard let map else { return }
             let L = parent.radar.layers
@@ -651,7 +712,8 @@ struct RadarMap: PlatformViewRepresentable {
             func my(_ lat: Double) -> Double { let l = min(85, max(-85, lat)) * .pi / 180; return log(tan(.pi / 4 + l / 2)) * 6378137 }
             let bbox = String(format: "%.0f,%.0f,%.0f,%.0f", mx(nw.longitude), my(se.latitude), mx(se.longitude), my(nw.latitude))
             let aspect = r.size.width / r.size.height
-            let w = Int(aspect >= 1 ? 1400 : 1400 * aspect), h = Int(aspect >= 1 ? 1400 / aspect : 1400)
+            let side = parent.radar.mode == .history ? 1600.0 : 2048.0
+            let w = Int(aspect >= 1 ? side : side * aspect), h = Int(aspect >= 1 ? side / aspect : side)
             let frames = parent.radar.frames
             let current = parent.radar.index
             // newest / current frame first, so something useful shows right away
@@ -663,7 +725,7 @@ struct RadarMap: PlatformViewRepresentable {
                         URL(string: frames[i].template.replacingOccurrences(of: "{bbox}", with: bbox)
                             .replacingOccurrences(of: "{w}", with: String(w)).replacingOccurrences(of: "{h}", with: String(h)))
                     }
-                    while next < min(6, order.count) {   // a few at a time
+                    while next < min(8, order.count) {   // a few at a time
                         let i = order[next], u = url(i); next += 1
                         g.addTask { (i, await Coordinator.fetchImage(u)) }
                     }
