@@ -109,6 +109,12 @@ struct SettingsView: View {
                 }
                 #endif
             }
+            Section("Appearance") {
+                Picker("Appearance", selection: $state.appearance) {
+                    ForEach(Appearance.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
             Section("Units") {
                 Picker("Units", selection: $state.units) {
                     Text("°F, mph").tag(Units.imperial)

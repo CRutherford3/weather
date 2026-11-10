@@ -19,6 +19,8 @@ final class AppState: ObservableObject {
     @Published var center: Place?
     @Published var centerForecast: Forecast?
     @Published var cardCollapsed: Bool { didSet { UserDefaults.standard.set(cardCollapsed, forKey: "cardCollapsed") } }
+    /// Light, dark, or follow the device setting.
+    @Published var appearance: Appearance { didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") } }
 
     let location = LocationManager()
     private var centerTask: Task<Void, Never>?
@@ -28,6 +30,7 @@ final class AppState: ObservableObject {
         favorites = Self.load("favorites") ?? []
         units = Units(rawValue: UserDefaults.standard.string(forKey: "units") ?? "") ?? .imperial
         cardCollapsed = UserDefaults.standard.bool(forKey: "cardCollapsed")
+        appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system
     }
 
     func refresh() async {
@@ -84,5 +87,26 @@ final class AppState: ObservableObject {
     private static func load<T: Decodable>(_ key: String) -> T? {
         guard let d = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: d)
+    }
+}
+
+/// App color scheme choice.
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+    /// nil means follow the device setting.
+    var scheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }

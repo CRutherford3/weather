@@ -11,6 +11,7 @@ struct WeatherApp: App {
                 .environmentObject(state)
                 .environmentObject(store)
                 .tint(Color("AccentColor"))
+                .preferredColorScheme(state.appearance.scheme)
                 .task { await state.refresh() }
         }
         #if os(macOS)
@@ -22,7 +23,8 @@ struct WeatherApp: App {
             SettingsView()
                 .environmentObject(state)
                 .environmentObject(store)
-                .frame(width: 460, height: 420)
+                .preferredColorScheme(state.appearance.scheme)
+                .frame(width: 460, height: 480)
         }
         #endif
     }

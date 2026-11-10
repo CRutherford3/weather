@@ -41,6 +41,12 @@ struct RadarScreen: View {
                 Slider(value: Binding(get: { Double(radar.index) }, set: { radar.index = Int($0.rounded()); radar.playing = false }),
                        in: 0...Double(max(1, radar.frames.count - 1)), step: 1)
             }
+            HStack(spacing: 6) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                Text(radar.layers.contains(.radar) ? "Hi-Def Radar" : "Radar Off").font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
             HStack {
                 Button { radar.playing.toggle() } label: { Image(systemName: radar.playing ? "pause.fill" : "play.fill") }
                 Text(radar.currentTime.map { $0.formatted(date: .omitted, time: .shortened) } ?? "--").monospacedDigit()
@@ -65,23 +71,15 @@ struct LayersSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Map layers") {
-                    ForEach(MapLayer.allCases) { l in
-                        let locked = store.effectivePlan < l.tier
-                        Toggle(isOn: Binding(
-                            get: { radar.layers.contains(l) },
-                            set: { on in
-                                if locked { showPlans = true; return }
-                                if on { radar.layers.insert(l) } else { radar.layers.remove(l) }
-                            })) {
-                            HStack { Text(l.title); if l.tier > .free { TierBadge(plan: l.tier) } }
+                ForEach(LayerGroup.allCases) { g in
+                    Section(g.rawValue) {
+                        ForEach(MapLayer.allCases.filter { $0.group == g }) { l in toggle(l) }
+                        if g == .radarSat {
+                            Slider(value: $radar.opacity, in: 0.2...1) { Text("Radar opacity") }
                         }
                     }
                 }
-                Section("Radar") {
-                    Slider(value: $radar.opacity, in: 0.2...1) { Text("Opacity") }
-                }
-                Section { Text("More layers (hail, marine, snow, tropics, outages, traffic) are on the website today and coming to the app next.").font(.footnote).foregroundStyle(.secondary) }
+                Section { Text("Still website only for now: fronts, winds, temperatures, air quality, hurricane tracker, buoys, traffic and power outages.").font(.footnote).foregroundStyle(.secondary) }
             }
             .navigationTitle("Layers")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -93,9 +91,33 @@ struct LayersSheet: View {
     }
 }
 
+extension LayersSheet {
+    @ViewBuilder func toggle(_ l: MapLayer) -> some View {
+        let locked = store.effectivePlan < l.tier
+        Toggle(isOn: Binding(
+            get: { radar.layers.contains(l) },
+            set: { on in
+                if locked { showPlans = true; return }
+                if on {
+                    if l.isSatellite { radar.layers.subtract(MapLayer.allCases.filter(\.isSatellite)) }
+                    radar.layers.insert(l)
+                } else {
+                    radar.layers.remove(l)
+                }
+            })) {
+            HStack { Text(l.title); if l.tier > .free { TierBadge(plan: l.tier) } }
+        }
+    }
+}
+
+/// PLUS / PRO label. Hidden when the current plan already includes the feature.
 struct TierBadge: View {
     var plan: Plan
+    @EnvironmentObject var store: Store
     var body: some View {
+        if store.effectivePlan < plan { label }
+    }
+    private var label: some View {
         Text(plan.name.uppercased()).font(.caption2.bold())
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background((plan == .pro ? Color.purple : Color.blue).opacity(0.2), in: RoundedRectangle(cornerRadius: 4))

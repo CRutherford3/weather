@@ -648,3 +648,5 @@ body.popup-open .crosshair { opacity: 0; }
 .mar-now { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 .mar-cam { margin-top: 14px; }
 .mar-cam h4 { margin-bottom: 6px; }
+/* Hide plan badges on features the current plan already includes */
+body[data-plan="pro"] .tier-badge, body[data-plan="plus"] .tier-badge.t-plus { display: none; }
