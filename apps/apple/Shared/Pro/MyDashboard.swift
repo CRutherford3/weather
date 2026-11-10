@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Model
 
@@ -23,7 +26,7 @@ struct DashPage: Codable, Identifiable, Hashable {
         DashWidget(kind: "now"), DashWidget(kind: "alerts"),
         DashWidget(kind: "hourly", size: .large), DashWidget(kind: "radar", size: .large),
         DashWidget(kind: "daily"), DashWidget(kind: "details"),
-        DashWidget(kind: "spc_d1"), DashWidget(kind: "sfc"),
+        DashWidget(kind: "spc_d1"), DashWidget(kind: "wpc_sfc"),
     ])
 }
 
@@ -60,15 +63,35 @@ final class DashStore: ObservableObject {
     @Published var pages: [DashPage] { didSet { save() } }
     @Published var current = 0
 
+    private static let key = "dashPagesV2"
+
     init() {
-        if let d = UserDefaults.standard.data(forKey: "dashPages"),
+        if let d = UserDefaults.standard.data(forKey: Self.key),
            let p = try? JSONDecoder().decode([DashPage].self, from: d), !p.isEmpty {
             pages = p
         } else {
-            pages = [.starter]
+            pages = Self.websiteLayout()
         }
     }
-    private func save() { UserDefaults.standard.set(try? JSONEncoder().encode(pages), forKey: "dashPages") }
+    private func save() { UserDefaults.standard.set(try? JSONEncoder().encode(pages), forKey: Self.key) }
+
+    /// The website's dashboard pages. iPad and Mac get all of them; iPhone starts with "My Weather".
+    static func websiteLayout() -> [DashPage] {
+        let all = Products.templates.map { t in
+            DashPage(name: t.name, widgets: t.widgets.map { DashWidget(kind: $0.0, size: $0.1) })
+        }
+        #if os(macOS)
+        return all
+        #else
+        if UIDevice.current.userInterfaceIdiom == .pad { return all }
+        var mine = all.first ?? .starter
+        mine.widgets.insert(DashWidget(kind: "details"), at: min(4, mine.widgets.count))
+        mine.widgets.append(DashWidget(kind: "sun", size: .small))
+        return [mine]
+        #endif
+    }
+
+    func resetToWebsite() { pages = Self.websiteLayout(); current = 0 }
 
     var page: DashPage { pages[min(current, pages.count - 1)] }
 
@@ -146,13 +169,14 @@ struct MyDashboard: View {
             ToolbarItem { Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") } }
         }
         .sheet(isPresented: $editing) { DashEditor(dash: dash).environmentObject(store) }
+        .onAppear { if dash.current >= DashStore.limit(store.effectivePlan) { dash.current = 0 } }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
     }
 
     private var pageBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(dash.pages.indices, id: \.self) { i in
+                ForEach(0..<min(dash.pages.count, DashStore.limit(store.effectivePlan)), id: \.self) { i in
                     Button(dash.pages[i].name) { dash.current = i }
                         .buttonStyle(.bordered)
                         .tint(i == dash.current ? Color.accentColor : Color.secondary)
@@ -383,6 +407,9 @@ struct DashEditor: View {
                 } footer: {
                     Text("Drag to reorder. Large widgets take a full row.")
                 }
+                Section {
+                    Button("Reset to the website's layout") { dash.resetToWebsite() }
+                } footer: { Text("Replaces your pages with the website's ready-made pages.") }
                 if dash.pages.count > 1 {
                     Section {
                         Button("Delete this page", role: .destructive) {

@@ -11,6 +11,8 @@ enum AppConfig {
     /// Auto-renewing subscriptions. Create these exact IDs in App Store Connect (one subscription group).
     static let plusMonthly = "io.dialcheck.weather.plus.monthly"
     static let proMonthly = "io.dialcheck.weather.pro.monthly"
+    /// One-time purchase (non-consumable): unlocks every map layer forever.
+    static let radarPack = "io.dialcheck.weather.radarpack"
 
     /// Public pages (GitHub Pages from the repo's docs folder). Use these same links in App Store Connect.
     static let privacyURL = URL(string: "https://crutherford3.github.io/weather/privacy.html")!

@@ -19,6 +19,8 @@ enum Plan: Int, Comparable, CaseIterable {
 final class Store: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var plan: Plan = .free
+    /// Owns the one-time Pro Radar Pack.
+    @Published private(set) var radarPack = false
     @Published var message: String?
 
     /// For testing before products exist in App Store Connect (Settings > Preview plan). Debug builds only.
@@ -45,18 +47,42 @@ final class Store: ObservableObject {
     }
 
     func load() async {
-        products = (try? await Product.products(for: [AppConfig.plusMonthly, AppConfig.proMonthly]))?.sorted { $0.price < $1.price } ?? []
+        products = (try? await Product.products(for: [AppConfig.plusMonthly, AppConfig.proMonthly, AppConfig.radarPack]))?.sorted { $0.price < $1.price } ?? []
         await refreshEntitlements()
     }
 
     func refreshEntitlements() async {
         var best: Plan = .free
+        var pack = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let t) = result, t.revocationDate == nil else { continue }
+            if t.productID == AppConfig.radarPack { pack = true }
             if t.productID == AppConfig.proMonthly { best = .pro }
             else if t.productID == AppConfig.plusMonthly, best < .plus { best = .plus }
         }
         plan = best
+        radarPack = pack
+    }
+
+    /// Map layers: open with the right plan, or with the Radar Pack.
+    func canUse(_ l: MapLayer) -> Bool { radarPack || effectivePlan >= l.tier }
+
+    var radarPackProduct: Product? { products.first { $0.id == AppConfig.radarPack } }
+
+    func buyRadarPack() async {
+        guard let product = radarPackProduct else {
+            message = "The Radar Pack isn't set up in App Store Connect yet."
+            return
+        }
+        do {
+            switch try await product.purchase() {
+            case .success(.verified(let t)):
+                await t.finish(); await refreshEntitlements()
+            case .success(.unverified): message = "The purchase couldn't be verified."
+            case .pending: message = "Purchase pending approval."
+            default: break
+            }
+        } catch { message = error.localizedDescription }
     }
 
     func product(for p: Plan) -> Product? {

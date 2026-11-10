@@ -58,8 +58,9 @@ struct PlansView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     ForEach(Plan.allCases, id: \.self) { p in card(p) }
+                    radarPackCard
                     Button("Restore purchases") { Task { await store.restore() } }.padding(.top, 4)
-                    Text("Subscriptions renew monthly until canceled in your App Store account settings.")
+                    Text("Subscriptions renew monthly until canceled in your App Store account settings. The Radar Pack is a one-time purchase.")
                         .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     if let m = store.message { Text(m).font(.footnote).foregroundStyle(.orange) }
                 }
@@ -71,6 +72,26 @@ struct PlansView: View {
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 600)
         #endif
+    }
+
+    private var radarPackCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Pro Radar Pack", systemImage: "dot.radiowaves.left.and.right").font(.title2.bold())
+                Spacer()
+                Text(store.radarPackProduct?.displayPrice ?? "$9.99").font(.headline)
+            }
+            Text("One-time purchase. Yours forever, no subscription.").foregroundStyle(.secondary)
+            ForEach(["Every map layer unlocked", "Lightning, hail, hurricane tracker, winds, temperatures, air quality",
+                     "Buoys, waves, sea temperature, nautical charts, traffic, power outages", "Works on iPhone, iPad and Mac"], id: \.self) {
+                Label($0, systemImage: "checkmark").font(.subheadline)
+            }
+            Button(store.radarPack ? "Purchased" : "Buy once") { Task { await store.buyRadarPack() } }
+                .buttonStyle(.borderedProminent).tint(.orange).disabled(store.radarPack).frame(maxWidth: .infinity)
+        }
+        .padding()
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.orange, lineWidth: 2))
     }
 
     private func card(_ p: Plan) -> some View {

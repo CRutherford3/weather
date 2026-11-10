@@ -44,6 +44,7 @@ If Xcode shows a build error, copy the error text and send it to me.
 2. **Subscriptions** > create a subscription group "DopplerIQ" with two auto-renewing products:
    - `io.dialcheck.weather.plus.monthly`, 1 month, $2.99
    - `io.dialcheck.weather.pro.monthly`, 1 month, $9.99 (Pro should be the higher level in the group)
+   Then under **In-App Purchases** add a **Non-Consumable**: `io.dialcheck.weather.radarpack`, $9.99, name "Pro Radar Pack" (unlocks every map layer forever).
 3. App Privacy: the app collects **coarse location** (not linked to you, not used for tracking). Once ads are added,
    AdMob also needs its own privacy answers.
 4. Archive in Xcode (**Product > Archive**) once for an iOS device and once for **My Mac**, then **Distribute App** to App Store Connect.

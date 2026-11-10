@@ -79,7 +79,9 @@ struct LayersSheet: View {
                         }
                     }
                 }
-                Section { Text("Still website only for now: fronts, winds, temperatures, air quality, hurricane tracker, buoys, traffic and power outages.").font(.footnote).foregroundStyle(.secondary) }
+                if !store.radarPack && store.effectivePlan < .pro {
+                    Section { Button { showPlans = true } label: { Label("Unlock every layer with the Pro Radar Pack", systemImage: "lock.open.fill") } }
+                }
             }
             .navigationTitle("Layers")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -93,7 +95,7 @@ struct LayersSheet: View {
 
 extension LayersSheet {
     @ViewBuilder func toggle(_ l: MapLayer) -> some View {
-        let locked = store.effectivePlan < l.tier
+        let locked = !store.canUse(l)
         Toggle(isOn: Binding(
             get: { radar.layers.contains(l) },
             set: { on in
@@ -105,7 +107,7 @@ extension LayersSheet {
                     radar.layers.remove(l)
                 }
             })) {
-            HStack { Text(l.title); if l.tier > .free { TierBadge(plan: l.tier) } }
+            HStack { Text(l.title); if locked { TierBadge(plan: l.tier) } }
         }
     }
 }
