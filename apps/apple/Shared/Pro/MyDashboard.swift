@@ -164,6 +164,20 @@ final class DashStore: ObservableObject {
         if let i = pages[ci].widgets.firstIndex(where: { $0.id == id }) { pages[ci].widgets[i].size = s }
     }
     func remove(_ id: UUID) { pages[ci].widgets.removeAll { $0.id == id } }
+
+    /// Move a tile from whatever page it's on to another page (dropped on that page's tab).
+    @discardableResult func moveWidget(_ id: UUID, toPage target: Int) -> String? {
+        guard pages.indices.contains(target) else { return nil }
+        for p in pages.indices {
+            if let i = pages[p].widgets.firstIndex(where: { $0.id == id }) {
+                guard p != target else { return nil }
+                let w = pages[p].widgets.remove(at: i)
+                pages[target].widgets.append(w)
+                return "Moved \(Self.title(w)) to \(pages[target].name)"
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - Dashboard screen
@@ -177,6 +191,8 @@ struct MyDashboard: View {
     @State private var showPlans = false
     @State private var bust = Int(Date().timeIntervalSince1970 / 600)
     @State private var adding = false
+    @State private var dropTab: Int?
+    @State private var toast: String?
 
     var body: some View {
         ScrollView {
@@ -202,7 +218,7 @@ struct MyDashboard: View {
                     }
                 }
                 if !dash.page.widgets.isEmpty {
-                    Text("Drag a tile to move it. Long-press (or right-click) a tile to resize or remove it.")
+                    Text("Drag a tile to move it, or drop it on a page tab above to move it to that page. Long-press (or right-click) a tile to resize or remove it.")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }
             }
@@ -225,6 +241,15 @@ struct MyDashboard: View {
         .sheet(isPresented: $adding) { WidgetCatalog(dash: dash).environmentObject(store) }
         .sheet(isPresented: $editing) { DashEditor(dash: dash).environmentObject(store) }
         .onAppear { if dash.current >= DashStore.limit(store.effectivePlan) { dash.current = 0 } }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Label(toast, systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule()).padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: toast)
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
     }
 
@@ -232,9 +257,19 @@ struct MyDashboard: View {
         Picker("Size", selection: Binding(get: { w.size }, set: { dash.setSize(w.id, $0) })) {
             ForEach(DashWidget.Size.allCases, id: \.self) { Text($0.title).tag($0) }
         }
+        Menu {
+            ForEach(dash.pages.indices.filter { $0 != dash.current && $0 < DashStore.limit(store.effectivePlan) }, id: \.self) { i in
+                Button(dash.pages[i].name) { if let m = dash.moveWidget(w.id, toPage: i) { showToast(m) } }
+            }
+        } label: { Label("Move to page", systemImage: "rectangle.portrait.and.arrow.right") }
         Button { dash.moveToEdge(w.id, top: true) } label: { Label("Move to top", systemImage: "arrow.up.to.line") }
         Button { dash.moveToEdge(w.id, top: false) } label: { Label("Move to bottom", systemImage: "arrow.down.to.line") }
         Button(role: .destructive) { withAnimation { dash.remove(w.id) } } label: { Label("Remove", systemImage: "trash") }
+    }
+
+    private func showToast(_ m: String) {
+        toast = m
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { if toast == m { toast = nil } }
     }
 
     /// Add one of the website's ready-made layouts as a new page.
@@ -251,7 +286,18 @@ struct MyDashboard: View {
                 ForEach(0..<min(dash.pages.count, DashStore.limit(store.effectivePlan)), id: \.self) { i in
                     Button(dash.pages[i].name) { dash.current = i }
                         .buttonStyle(.bordered)
-                        .tint(i == dash.current ? Color.accentColor : Color.secondary)
+                        .tint(i == dash.current || dropTab == i ? Color.accentColor : Color.secondary)
+                        .scaleEffect(dropTab == i ? 1.12 : 1)
+                        .animation(.snappy, value: dropTab)
+                        // drop a tile here to move it to this page
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let s = items.first, let id = UUID(uuidString: s),
+                                  let msg = withAnimation(.snappy, { dash.moveWidget(id, toPage: i) }) else { return false }
+                            showToast(msg)
+                            return true
+                        } isTargeted: { on in
+                            if on { dropTab = i } else if dropTab == i { dropTab = nil }
+                        }
                 }
                 Button {
                     if dash.pages.count < DashStore.limit(store.effectivePlan) {
