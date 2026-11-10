@@ -33,6 +33,12 @@ If Xcode shows a build error, copy the error text and send it to me.
 
 ## 2. App Store Connect (once, before submitting)
 
+0. Turn on the public privacy and support pages: on GitHub open the **weather** repo > **Settings** > **Pages**.
+   Under Build and deployment pick **Deploy from a branch**, branch **main**, folder **/docs**, and Save.
+   In a minute or two these work (use them in App Store Connect):
+   - Privacy Policy URL: https://crutherford3.github.io/weather/privacy.html
+   - Support URL: https://crutherford3.github.io/weather/support.html
+
 1. https://appstoreconnect.apple.com > **Apps** > **+** > New App. Platforms: **iOS** and **macOS**.
    Bundle ID: `io.dialcheck.weather`. Name: DopplerIQ.
 2. **Subscriptions** > create a subscription group "DopplerIQ" with two auto-renewing products:

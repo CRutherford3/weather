@@ -12,5 +12,7 @@ enum AppConfig {
     static let plusMonthly = "io.dialcheck.weather.plus.monthly"
     static let proMonthly = "io.dialcheck.weather.pro.monthly"
 
-    static let privacyURL = URL(string: "https://weather.dialcheck.io/#settings")!
+    /// Public pages (GitHub Pages from the repo's docs folder). Use these same links in App Store Connect.
+    static let privacyURL = URL(string: "https://crutherford3.github.io/weather/privacy.html")!
+    static let supportURL = URL(string: "https://crutherford3.github.io/weather/support.html")!
 }
