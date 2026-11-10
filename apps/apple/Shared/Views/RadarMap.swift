@@ -115,7 +115,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
         switch self {
         case .lightning, .rainRate, .echoTops, .road, .rain, .rain72, .hail, .temps, .winds, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation:
             return .plus
-        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages, .sites:
+        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages, .sites, .iss:
             return .pro
         default:
             return .free
@@ -124,6 +124,9 @@ enum MapLayer: String, CaseIterable, Identifiable {
 
     /// Opened by the one-time Pro Radar Pack (Doppler tools only).
     var inRadarPack: Bool { self == .sites }
+    /// Shown in the Pro group (Professional Radar, Marine & Space) instead of its normal group.
+    var isProRadar: Bool { self == .sites || isMarineSpace }
+    var isMarineSpace: Bool { [.buoys, .cams, .waves, .sst, .charts, .iss].contains(self) }
 
     /// Only one satellite view at a time.
     var isSatellite: Bool { [.satIR, .satVis, .satWV, .satColor].contains(self) }

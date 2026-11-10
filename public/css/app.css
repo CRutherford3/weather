@@ -662,3 +662,12 @@ body[data-plan="pro"] .tier-badge, body[data-plan="plus"] .tier-badge.t-plus { d
 .tbub .road-chip { padding: 2px 7px; border-radius: 8px; color: #fff; font-size: 11.5px; box-shadow: 0 1px 3px rgba(0,0,0,.35); white-space: nowrap; }
 .qp-prods { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; } .qp-prods .btn { flex: 1 0 auto; }
 .qp-tilt { margin: 4px 0 6px; } .qp-tilt button[disabled] { opacity: .35; }
+/* collapsible layer groups */
+.lgroup-head { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); padding: 14px 16px 14px 18px; font-size: 15px; font-weight: 700; text-align: left; cursor: pointer; }
+.lgroup-head span:first-child { flex: 1; }
+.lgroup-head .chev { transition: transform .2s; font-style: normal; color: var(--muted); }
+.lgroup.open .lgroup-head .chev { transform: rotate(90deg); }
+.lgroup-body { display: none; }
+.lgroup.open .lgroup-body { display: block; }
+.lgroup.pro .lgroup-head { background: rgba(139,92,246,.10); }
+.lsub { padding-top: 12px; }

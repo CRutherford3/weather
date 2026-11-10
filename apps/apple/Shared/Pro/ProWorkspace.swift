@@ -11,6 +11,8 @@ struct ProWorkspace: View {
     @AppStorage("panelWidth") private var panelWidth: Double = 380
     @AppStorage("panelOpen") private var panelOpen = true
     @State private var dragStart: Double?
+    @AppStorage("sidebarMapsOpen") private var mapsOpen = false
+    @AppStorage("sidebarProOpen") private var proOpen = false
 
     enum Item: Hashable { case radar, forecast, dashboard, allMaps, route, section(String), settings }
 
@@ -24,8 +26,20 @@ struct ProWorkspace: View {
                     Label("Route Weather", systemImage: "car.fill").tag(Item.route)
                     Label("All maps", systemImage: "map").tag(Item.allMaps)
                 }
-                Section("Map collections") {
-                    ForEach(Products.sections) { s in Label(s.id, systemImage: icon(s.id)).tag(Item.section(s.id)) }
+                Section("Map collections", isExpanded: $mapsOpen) {
+                    ForEach(Products.sections.filter { !isPro($0.id) }) { s in Label(s.id, systemImage: icon(s.id)).tag(Item.section(s.id)) }
+                }
+                // Pro map collections and Marine & Space, folded into one dropdown
+                Section(isExpanded: $proOpen) {
+                    ForEach(Products.sections.filter { isPro($0.id) }) { s in
+                        HStack {
+                            Label(s.id.replacingOccurrences(of: "Pro: ", with: ""), systemImage: icon(s.id))
+                            if store.effectivePlan < .pro { Spacer(); Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
+                        }
+                        .tag(Item.section(s.id))
+                    }
+                } header: {
+                    Label("Professional Radar", systemImage: "dot.radiowaves.left.and.right")
                 }
                 Section("My places") {
                     ForEach(state.favorites) { p in
@@ -119,8 +133,18 @@ struct ProWorkspace: View {
         }
     }
 
+    /// Sections that live under Professional Radar.
+    private func isPro(_ id: String) -> Bool { id.hasPrefix("Pro: ") || id == "Marine & Space" }
+
     private func icon(_ s: String) -> String {
         switch s {
+        case "Pro: Tropical Analysis": return "hurricane"
+        case "Pro: Ocean": return "water.waves"
+        case "Pro: Surface Analysis": return "map"
+        case "Pro: Satellite": return "globe.americas.fill"
+        case "Pro: Forecast Maps": return "calendar"
+        case "Pro: Fire, Drought & UV": return "flame"
+        case "Pro: Climatology": return "chart.line.uptrend.xyaxis"
         case "Tropics": return "hurricane"
         case "Severe Weather": return "cloud.bolt.rain"
         case "Rain, Snow & Fronts": return "cloud.snow"

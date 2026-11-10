@@ -51,8 +51,14 @@ export const S = {
 const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); store.set('siteFam', S.siteFam); store.set('siteTilt', S.tilt); };
 
 export const LAYER_GROUPS = [
+  // Pro group: single-site Doppler radar (also in the Radar Pack), then marine and space layers
+  ['Pro: Radar, Marine & Space', [
+    ['sites', 'Doppler Radar (tap a site)', 'dopplerOpts'],
+    ['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms'],
+    ['iss', 'ISS Orbital Tracking'],
+  ], 'pro'],
   ['Radar & Satellite', [
-    ['radar', 'Radar', 'radarOpts'], ['sites', 'Doppler Radar (tap a site)'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rainrate', 'Rain Rate (now)'], ['rain', 'Rain Totals', 'rainOpts'], ['echotops', 'Echo Tops (storm height)'],
+    ['radar', 'Radar', 'radarOpts'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rainrate', 'Rain Rate (now)'], ['rain', 'Rain Totals', 'rainOpts'], ['echotops', 'Echo Tops (storm height)'],
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
@@ -63,9 +69,8 @@ export const LAYER_GROUPS = [
   ]],
   ['Tropics', [['tropics', 'Hurricane Tracker'], ['twoutlook', 'Development Areas (2 & 7 day)'], ['windprob', 'Tropical Storm Wind Chances'], ['surgerisk', 'Storm Surge Risk', 'surgeOpts']]],
   ['Snow & Ice', [['snowdepth', 'Snow Depth Now'], ['snowprob', 'Snow & Ice Chances', 'snowOpts'], ['snowcover', 'Snow & Sea Ice Cover']]],
-  ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms']]],
   ['More', [
-    ['places', 'My Places'], ['outages', 'Power Outages (partial US)'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
+    ['places', 'My Places'], ['outages', 'Power Outages (partial US)'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'],
   ]],
 ];
 
@@ -950,15 +955,55 @@ const OPTS = {
   surgeOpts: () => `<div class="seg" data-o="surgeCat">${['1', '2', '3', '4', '5'].map((v) => `<button data-v="${v}" class="${S.surgeCat === v ? 'on' : ''}">Cat ${v}</button>`).join('')}</div><small class="muted">Worst-case flooding above ground for a hurricane of that strength (NHC). Not a forecast for any one storm.</small>`,
   snowOpts: () => `<div class="seg" data-o="snowDay">${['1', '2', '3'].map((v) => `<button data-v="${v}" class="${S.snowDay === v ? 'on' : ''}">Day ${v}</button>`).join('')}</div><div class="seg" data-o="snowAmt">${[['4', '4"+ snow'], ['8', '8"+'], ['12', '12"+'], ['ice', '¼" ice']].map(([v, t]) => `<button data-v="${v}" class="${S.snowAmt === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">WPC chance of reaching that amount.</small>`,
   hailOpts: () => `<div class="seg" data-o="hail">${[['24', '24 hours'], ['72', '3 days'], ['168', '7 days']].map(([v, t]) => `<button data-v="${v}" class="${S.hail === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">Hail reports sized by stone size, plus today's SPC hail risk area.</small>`,
+  dopplerOpts: () => {
+    const on = S.radarSrc === 'site' && S.layers.radar;
+    const tilted = SITE_PRODUCTS[S.siteFam]?.[1];
+    return `<small class="muted">${on ? `Showing K${S.site}. ` : 'Tap a radar dish on the map, or pick a product to use the radar nearest you. '}</small>
+      <div class="qp-prods" data-doppler>${Object.entries(SITE_PRODUCTS).map(([k, [t]]) => `<button class="btn small${on && S.siteFam === k ? '' : ' ghost'}" data-sp="${k}">${t.replace(/ \(.*\)/, '')}</button>`).join('')}</div>
+      <div class="seg small qp-tilt" data-dtilt>${TILTS.map((t, i) => `<button data-tilt="${i}" class="${on && tilted && S.tilt === i ? 'on' : ''}"${on && !tilted ? ' disabled' : ''}>${t}</button>`).join('')}</div>
+      ${on ? '<button class="btn small ghost" data-sp="mosaic">Back to Hi-Def mosaic</button>' : ''}`;
+  },
   rainOpts: () => `<div class="seg" data-o="rain">${[['1h', 'Past hour'], ['24h', '24 hours'], ['72h', '72 hours']].map(([v, t]) => `<button data-v="${v}" class="${S.rain === v ? 'on' : ''}">${t}</button>`).join('')}</div>`,
 };
 function openLayersSheet() {
   const row = ([id, name, opts]) => `<div class="lrow" data-id="${id}">
     <button class="lrow-main" ${opts ? `data-exp="${id}"` : ''}><span>${name} ${badge(tierOf(id))}</span>${opts ? '<i class="chev">›</i>' : ''}</button>
     <label class="tg${canLayer(id) ? '' : ' locked'}"><input type="checkbox" data-layer="${id}" ${S.layers[id] && canLayer(id) ? 'checked' : ''}><span></span></label>
-    ${opts ? `<div class="lrow-opts" hidden>${OPTS[opts]()}</div>` : ''}</div>`;
-  openSheet('Layers', LAYER_GROUPS.map(([g, rows]) => `<div class="lgroup"><div class="sheet-sub">${g}</div>${rows.map(row).join('')}</div>`).join('') +
+    ${opts ? `<div class="lrow-opts" ${id === 'sites' && S.layers.sites && canLayer('sites') ? '' : 'hidden'}>${OPTS[opts]()}</div>` : ''}</div>`;
+  // Collapsible groups (remembered). Radar & Satellite and Pro start open.
+  const openSet = new Set(store.get('layerGroupsOpen', ['Radar & Satellite', 'Pro: Radar, Marine & Space']));
+  const group = ([g, rows, kind]) => {
+    const n = rows.filter(([id]) => S.layers[id] && canLayer(id)).length;
+    const body = kind === 'pro'
+      ? `${row(rows[0])}<div class="sheet-sub lsub">Marine & Space</div>${rows.slice(1).map(row).join('')}`
+      : rows.map(row).join('');
+    return `<div class="lgroup${openSet.has(g) ? ' open' : ''}${kind === 'pro' ? ' pro' : ''}" data-g="${esc(g)}">
+      <button class="lgroup-head"><span>${g}${kind === 'pro' ? ` ${badge('pro')}` : ''}</span><span class="muted small">${n ? `${n} on` : ''}</span><i class="chev">›</i></button>
+      <div class="lgroup-body">${body}</div></div>`;
+  };
+  openSheet('Layers', LAYER_GROUPS.map(group).join('') +
     '<p class="muted small sheet-foot">Tap anywhere on the map for that spot\'s forecast, or to save it as a place.</p>', (b) => {
+    $$('.lgroup-head', b).forEach((h) => h.onclick = () => {
+      const g = h.parentElement; g.classList.toggle('open');
+      const cur = new Set(store.get('layerGroupsOpen', ['Radar & Satellite', 'Pro: Radar, Marine & Space']));
+      if (g.classList.contains('open')) cur.add(g.dataset.g); else cur.delete(g.dataset.g);
+      store.set('layerGroupsOpen', [...cur]);
+    });
+    // Doppler product and tilt (Pro or Radar Pack)
+    const nearestThen = async (fam, tilt) => {
+      if (!canLayer('sites')) { gate('sites', 'Doppler radar'); return; }
+      S.layers.sites = true;
+      let code = S.radarSrc === 'site' && S.site ? S.site : null;
+      if (!code) { const c = map.getCenter(); code = nearestSite(await radarSites(), c.lat, c.lng)?.code || 'MLB'; }
+      await useSite(code, fam, tilt);
+      if (!active.sites) applyLayers();
+      openLayersSheet();
+    };
+    $$('[data-doppler] [data-sp], .lrow-opts [data-sp="mosaic"]', b).forEach((x) => x.onclick = () => {
+      if (x.dataset.sp === 'mosaic') { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); openLayersSheet(); return; }
+      nearestThen(x.dataset.sp, S.radarSrc === 'site' ? S.tilt : 0);
+    });
+    $$('[data-dtilt] [data-tilt]', b).forEach((x) => x.onclick = () => nearestThen(S.radarSrc === 'site' ? S.siteFam : 'ref', +x.dataset.tilt));
     $$('[data-layer]', b).forEach((cb) => cb.onchange = () => {
       const id = cb.dataset.layer;
       if (cb.checked && !canLayer(id)) { cb.checked = false; gate(id, layerName(id)); return; }

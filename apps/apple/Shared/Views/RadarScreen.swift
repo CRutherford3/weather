@@ -36,7 +36,7 @@ struct RadarScreen: View {
         }
         .task { await radar.load() }
         .onChange(of: state.place) { _, _ in recenter += 1 }
-        .sheet(isPresented: $showLayers) { LayersSheet(radar: radar).environmentObject(store) }
+        .sheet(isPresented: $showLayers) { LayersSheet(radar: radar).environmentObject(store).environmentObject(state) }
         .sheet(item: $camera) { $0 }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
         .confirmationDialog(tappedSite.map { "\($0.id) · \($0.name)" } ?? "Radar", isPresented: Binding(get: { tappedSite != nil }, set: { if !$0 { tappedSite = nil } }), titleVisibility: .visible) {
@@ -147,8 +147,18 @@ struct RadarScreen: View {
 struct LayersSheet: View {
     @ObservedObject var radar: RadarController
     @EnvironmentObject var store: Store
+    @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showPlans = false
+    /// Which groups are expanded (saved). Radar & Satellite starts open; the rest start collapsed.
+    @AppStorage("layerGroupsOpen") private var openRaw = "pro,Radar & Satellite"
+    private var open: Set<String> { Set(openRaw.split(separator: ",").map(String.init)) }
+    private func expanded(_ id: String) -> Binding<Bool> {
+        Binding(get: { open.contains(id) }, set: { on in
+            var s = open; if on { s.insert(id) } else { s.remove(id) }
+            openRaw = s.sorted().joined(separator: ",")
+        })
+    }
 
     var body: some View {
         NavigationStack {
@@ -159,22 +169,30 @@ struct LayersSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                ForEach(LayerGroup.allCases) { g in
-                    Section(g.rawValue) {
-                        ForEach(MapLayer.allCases.filter { $0.group == g }) { l in toggle(l) }
-                        if g == .radarSat {
-                            Picker("Radar style", selection: $radar.hiDef) {
-                                Text("Hi-Def (smooth)").tag(true)
-                                Text("Standard (raw)").tag(false)
+                Section { professionalRadar }
+                ForEach(LayerGroup.allCases.filter { g in MapLayer.allCases.contains { $0.group == g && !$0.isProRadar } }) { g in
+                    Section {
+                        DisclosureGroup(isExpanded: expanded(g.rawValue)) {
+                            ForEach(MapLayer.allCases.filter { $0.group == g && !$0.isProRadar }) { l in toggle(l) }
+                            if g == .radarSat {
+                                Picker("Radar style", selection: $radar.hiDef) {
+                                    Text("Hi-Def (smooth)").tag(true)
+                                    Text("Standard (raw)").tag(false)
+                                }
+                                Slider(value: $radar.opacity, in: 0.2...1) { Text("Radar opacity") }
                             }
-                            Slider(value: $radar.opacity, in: 0.2...1) { Text("Radar opacity") }
+                        } label: {
+                            HStack {
+                                Text(g.rawValue).font(.headline)
+                                Spacer()
+                                let n = radar.layers.filter { $0.group == g && !$0.isProRadar }.count
+                                if n > 0 { Text("\(n) on").font(.caption).foregroundStyle(.secondary) }
+                            }
                         }
                     }
                 }
                 if store.effectivePlan < .plus {
                     Section { Button { showPlans = true } label: { Label("Unlock every layer with Plus", systemImage: "lock.open.fill") } }
-                } else if !store.hasDoppler {
-                    Section { Button { showPlans = true } label: { Label("Get Doppler radar with Pro or the Radar Pack", systemImage: "dot.radiowaves.left.and.right") } }
                 }
             }
             .formStyle(.grouped)   // scrollable list on Mac (the default Mac form style doesn't scroll)
@@ -185,6 +203,66 @@ struct LayersSheet: View {
         #if os(macOS)
         .frame(width: 480, height: 640)   // fixed size so the layer list scrolls on Mac
         #endif
+    }
+
+    /// Pro: single radar sites, Doppler products, tilts, past and future radar (also in the Radar Pack),
+    /// then the marine and space layers.
+    @ViewBuilder private var professionalRadar: some View {
+        DisclosureGroup(isExpanded: expanded("pro")) {
+            if !store.hasDoppler {
+                Text("Pick any NEXRAD radar and see velocity, 4 tilt angles, hail and debris (dual-pol), VIL and echo tops, plus past 48 hours and future radar.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button { showPlans = true } label: { Label("Get it with Pro or the $6.99 Radar Pack", systemImage: "lock.open.fill") }
+            } else {
+                toggle(.sites)
+                if let s = radar.site {
+                    LabeledContent("Showing", value: "\(s.id) · \(s.name)")
+                } else {
+                    Text("Tap a radar dish on the map, or pick a product below to use the radar nearest you.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Picker("Product", selection: Binding(get: { radar.site?.kind }, set: { p in if let p { choose(p, tilt: nil) } })) {
+                    if radar.site == nil { Text("Hi-Def mosaic").tag(RadarService.SiteProduct?.none) }
+                    ForEach(RadarService.SiteProduct.allCases) { p in Text(p.title).tag(Optional(p)) }
+                }
+                if let s = radar.site, s.kind.hasTilts {
+                    Picker("Tilt (beam angle)", selection: Binding(get: { s.tilt }, set: { t in choose(s.kind, tilt: t) })) {
+                        ForEach(0..<4, id: \.self) { t in Text(RadarService.SiteProduct.tiltNames[t]).tag(t) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if let s = radar.site { Text(s.kind.detail).font(.footnote).foregroundStyle(.secondary) }
+                Picker("Time", selection: Binding(get: { radar.site == nil ? radar.mode : .recent }, set: { radar.setMode($0) })) {
+                    ForEach(RadarMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                if radar.site != nil { Button("Back to Hi-Def mosaic") { radar.setSite(nil) } }
+            }
+            Text("MARINE & SPACE").font(.caption.bold()).foregroundStyle(.secondary).padding(.top, 6)
+            ForEach(MapLayer.allCases.filter(\.isMarineSpace)) { l in toggle(l) }
+        } label: {
+            HStack {
+                Label("Pro: Radar, Marine & Space", systemImage: "dot.radiowaves.left.and.right").font(.headline)
+                Spacer()
+                if store.hasDoppler { if let s = radar.site { Text(s.id).font(.caption).foregroundStyle(.secondary) } }
+                else { TierBadge(plan: .pro) }
+            }
+        }
+    }
+
+    /// Switch product or tilt on the current radar, or start with the radar nearest the selected place.
+    private func choose(_ p: RadarService.SiteProduct, tilt: Int?) {
+        if var s = radar.site {
+            s.product = p.rawValue
+            s.tilt = p.hasTilts ? (tilt ?? s.tilt) : 0
+            radar.setSite(s)
+            return
+        }
+        Task {
+            guard var s = await LiveData.nearestSite(state.place) else { return }
+            s.product = p.rawValue; s.tilt = p.hasTilts ? (tilt ?? 0) : 0
+            radar.layers.insert(.sites)
+            radar.setSite(s)
+        }
     }
 }
 
@@ -200,6 +278,7 @@ extension LayersSheet {
                     radar.layers.insert(l)
                 } else {
                     radar.layers.remove(l)
+                    if l == .sites, radar.site != nil { radar.setSite(nil) }
                 }
             })) {
             HStack { Text(l.title); if locked { TierBadge(plan: l.tier) } }
