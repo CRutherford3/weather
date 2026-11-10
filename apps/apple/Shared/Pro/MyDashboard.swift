@@ -286,7 +286,7 @@ struct WidgetCard: View {
             content
         }
         .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .sheet(item: $zoom) { p in ZoomedProduct(product: p, bust: bust) }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
@@ -584,7 +584,7 @@ struct WidgetCatalog: View {
 struct TileSizeKey: LayoutValueKey { static let defaultValue = 1 }
 
 /// Tiles flow left to right and wrap, each spanning columns by size. Narrower screens use wider spans,
-/// the same breakpoints as the website. Tiles in a row share the row's height.
+/// the same breakpoints as the website. Each tile is as tall as its content (no empty stretched cards).
 struct DashGridLayout: Layout {
     var spacing: CGFloat = 14
 
@@ -594,22 +594,29 @@ struct DashGridLayout: Layout {
         return 12
     }
 
-    /// Rows of (subview index, x, width), plus each row's height.
+    /// Rows of (subview index, x, width), plus each row's height. A row that doesn't use all 12 columns is
+    /// widened to fill the screen, keeping the tiles' proportions, so there's no empty strip at the end.
     private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [(items: [(Int, CGFloat, CGFloat)], height: CGFloat)] {
-        let col = (width - 11 * spacing) / 12
-        var rows: [(items: [(Int, CGFloat, CGFloat)], height: CGFloat)] = []
-        var cur: [(Int, CGFloat, CGFloat)] = [], used = 0, h: CGFloat = 0
+        var groups: [[(Int, Int)]] = [], cur: [(Int, Int)] = [], used = 0
         for (i, sv) in subviews.enumerated() {
             let sp = span(sv[TileSizeKey.self], width)
-            if used + sp > 12, !cur.isEmpty { rows.append((cur, h)); cur = []; used = 0; h = 0 }
-            let w = CGFloat(sp) * col + CGFloat(sp - 1) * spacing
-            let x = CGFloat(used) * (col + spacing)
-            cur.append((i, x, w))
-            h = max(h, sv.sizeThatFits(ProposedViewSize(width: w, height: nil)).height)
-            used += sp
+            if used + sp > 12, !cur.isEmpty { groups.append(cur); cur = []; used = 0 }
+            cur.append((i, sp)); used += sp
         }
-        if !cur.isEmpty { rows.append((cur, h)) }
-        return rows
+        if !cur.isEmpty { groups.append(cur) }
+        return groups.map { g in
+            let total = CGFloat(g.reduce(0) { $0 + $1.1 })
+            let free = width - spacing * CGFloat(g.count - 1)
+            var x: CGFloat = 0, h: CGFloat = 0
+            var items: [(Int, CGFloat, CGFloat)] = []
+            for (i, sp) in g {
+                let w = free * CGFloat(sp) / total
+                items.append((i, x, w))
+                h = max(h, subviews[i].sizeThatFits(ProposedViewSize(width: w, height: nil)).height)
+                x += w + spacing
+            }
+            return (items, h)
+        }
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -624,7 +631,7 @@ struct DashGridLayout: Layout {
         for row in arrange(bounds.width, subviews) {
             for (i, x, w) in row.items {
                 subviews[i].place(at: CGPoint(x: bounds.minX + x, y: y), anchor: .topLeading,
-                                  proposal: ProposedViewSize(width: w, height: row.height))
+                                  proposal: ProposedViewSize(width: w, height: nil))
             }
             y += row.height + spacing
         }
