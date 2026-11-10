@@ -22,7 +22,7 @@ cats.sort((x, y) => { const r = (c) => { const i = order.indexOf(c); return i < 
 let out = `// Generated from public/js/dashboard.js (WIDGETS and TEMPLATES) so the app has the same maps and pages as the website.\n// Regenerate with: node apps/apple/tools/gen-products.mjs\n\nextension Products {\n    static let sections: [ProductSection] = [\n`;
 for (const cat of cats) out += `        .init(id: ${q(cat)}, products: [\n${byCat[cat].join('\n')}\n        ]),\n`;
 out += `    ]\n\n    /// The website's ready-made dashboard pages.\n    static let templates: [(name: String, pro: Bool, widgets: [(String, DashWidget.Size)])] = [\n`;
-const sz = { s: '.small', m: '.medium', l: '.large', xl: '.large' };
+const sz = { s: '.small', m: '.medium', l: '.large', xl: '.full' };
 for (const t of Object.values(TEMPLATES)) {
   const ws = t.w.map(([k, s]) => {
     if (local[k]) return `(${q(local[k])}, ${sz[s]})`;

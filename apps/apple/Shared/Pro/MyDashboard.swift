@@ -7,8 +7,12 @@ import UIKit
 
 /// One widget on a dashboard page. `kind` is a local widget key, a map product id, or a custom type.
 struct DashWidget: Codable, Identifiable, Hashable {
-    enum Size: String, Codable, CaseIterable { case small, medium, large
-        var title: String { rawValue.capitalized }
+    enum Size: String, Codable, CaseIterable { case small, medium, large, full
+        var title: String { self == .full ? "Full width" : rawValue.capitalized }
+        /// Same order as the website's s / m / l / xl.
+        var code: Int {
+            switch self { case .small: return 0; case .medium: return 1; case .large: return 2; case .full: return 3 }
+        }
     }
     var id = UUID()
     var kind: String
@@ -24,7 +28,7 @@ struct DashPage: Codable, Identifiable, Hashable {
 
     static let starter = DashPage(name: "My Dashboard", widgets: [
         DashWidget(kind: "now"), DashWidget(kind: "alerts"),
-        DashWidget(kind: "hourly", size: .large), DashWidget(kind: "radar", size: .large),
+        DashWidget(kind: "hourly", size: .full), DashWidget(kind: "radar", size: .large),
         DashWidget(kind: "daily"), DashWidget(kind: "details"),
         DashWidget(kind: "spc_d1"), DashWidget(kind: "wpc_sfc"),
     ])
@@ -88,7 +92,7 @@ final class DashStore: ObservableObject {
     @Published var pages: [DashPage] { didSet { save() } }
     @Published var current = 0
 
-    private static let key = "dashPagesV3"
+    private static let key = "dashPagesV4"
 
     init() {
         if let d = UserDefaults.standard.data(forKey: Self.key),
@@ -132,6 +136,23 @@ final class DashStore: ObservableObject {
     }
 
     func add(_ w: DashWidget) { let i = min(current, pages.count - 1); pages[i].widgets.append(w) }
+
+    private var ci: Int { min(current, pages.count - 1) }
+    func move(_ id: UUID, before target: UUID) {
+        guard id != target, let from = pages[ci].widgets.firstIndex(where: { $0.id == id }) else { return }
+        let w = pages[ci].widgets.remove(at: from)
+        let to = pages[ci].widgets.firstIndex(where: { $0.id == target }) ?? pages[ci].widgets.count
+        pages[ci].widgets.insert(w, at: to)
+    }
+    func moveToEdge(_ id: UUID, top: Bool) {
+        guard let from = pages[ci].widgets.firstIndex(where: { $0.id == id }) else { return }
+        let w = pages[ci].widgets.remove(at: from)
+        pages[ci].widgets.insert(w, at: top ? 0 : pages[ci].widgets.count)
+    }
+    func setSize(_ id: UUID, _ s: DashWidget.Size) {
+        if let i = pages[ci].widgets.firstIndex(where: { $0.id == id }) { pages[ci].widgets[i].size = s }
+    }
+    func remove(_ id: UUID) { pages[ci].widgets.removeAll { $0.id == id } }
 }
 
 // MARK: - Dashboard screen
@@ -144,29 +165,7 @@ struct MyDashboard: View {
     @State private var editing = false
     @State private var showPlans = false
     @State private var bust = Int(Date().timeIntervalSince1970 / 600)
-
-    private enum Block: Identifiable {
-        case grid([DashWidget]), wide(DashWidget)
-        var id: String {
-            switch self {
-            case .grid(let w): return "g" + (w.first?.id.uuidString ?? "")
-            case .wide(let w): return "w" + w.id.uuidString
-            }
-        }
-    }
-
-    /// Large widgets take a full row; small and medium ones flow in a grid between them.
-    private var blocks: [Block] {
-        var out: [Block] = [], run: [DashWidget] = []
-        for w in dash.page.widgets {
-            if w.size == .large {
-                if !run.isEmpty { out.append(.grid(run)); run = [] }
-                out.append(.wide(w))
-            } else { run.append(w) }
-        }
-        if !run.isEmpty { out.append(.grid(run)) }
-        return out
-    }
+    @State private var adding = false
 
     var body: some View {
         ScrollView {
@@ -175,14 +174,25 @@ struct MyDashboard: View {
                 if dash.page.widgets.isEmpty {
                     ContentUnavailableView("No widgets yet", systemImage: "square.grid.2x2", description: Text("Tap Edit to add widgets to this page."))
                 }
-                ForEach(blocks) { b in
-                    switch b {
-                    case .wide(let w): WidgetCard(widget: w, bust: bust)
-                    case .grid(let ws):
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14, alignment: .top)], spacing: 14) {
-                            ForEach(ws) { w in WidgetCard(widget: w, bust: bust) }
-                        }
+                DashGridLayout(spacing: 14) {
+                    ForEach(dash.page.widgets) { w in
+                        WidgetCard(widget: w, bust: bust)
+                            .layoutValue(key: TileSizeKey.self, value: w.size.code)
+                            .draggable(w.id.uuidString) {
+                                Label(DashStore.title(w), systemImage: "square.grid.2x2")
+                                    .padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                            }
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let s = items.first, let from = UUID(uuidString: s) else { return false }
+                                withAnimation(.snappy) { dash.move(from, before: w.id) }
+                                return true
+                            }
+                            .contextMenu { tileMenu(w) }
                     }
+                }
+                if !dash.page.widgets.isEmpty {
+                    Text("Drag a tile to move it. Long-press (or right-click) a tile to resize or remove it.")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }
             }
             .padding()
@@ -191,11 +201,37 @@ struct MyDashboard: View {
         .navigationTitle(dash.page.name)
         .toolbar {
             ToolbarItem { NavigationLink { DashboardView() } label: { Label("All maps", systemImage: "map") } }
+            ToolbarItem {
+                Menu {
+                    ForEach(Products.templates.indices, id: \.self) { i in
+                        Button(Products.templates[i].name) { addTemplate(i) }
+                    }
+                } label: { Label("Layouts", systemImage: "rectangle.3.group") }
+            }
+            ToolbarItem { Button { adding = true } label: { Label("Add widget", systemImage: "plus") } }
             ToolbarItem { Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") } }
         }
+        .sheet(isPresented: $adding) { WidgetCatalog(dash: dash).environmentObject(store) }
         .sheet(isPresented: $editing) { DashEditor(dash: dash).environmentObject(store) }
         .onAppear { if dash.current >= DashStore.limit(store.effectivePlan) { dash.current = 0 } }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
+    }
+
+    @ViewBuilder private func tileMenu(_ w: DashWidget) -> some View {
+        Picker("Size", selection: Binding(get: { w.size }, set: { dash.setSize(w.id, $0) })) {
+            ForEach(DashWidget.Size.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        Button { dash.moveToEdge(w.id, top: true) } label: { Label("Move to top", systemImage: "arrow.up.to.line") }
+        Button { dash.moveToEdge(w.id, top: false) } label: { Label("Move to bottom", systemImage: "arrow.down.to.line") }
+        Button(role: .destructive) { withAnimation { dash.remove(w.id) } } label: { Label("Remove", systemImage: "trash") }
+    }
+
+    /// Add one of the website's ready-made layouts as a new page.
+    private func addTemplate(_ i: Int) {
+        guard dash.pages.count < DashStore.limit(store.effectivePlan) else { showPlans = true; return }
+        let t = Products.templates[i]
+        dash.pages.append(DashPage(name: t.name, widgets: t.widgets.map { DashWidget(kind: $0.0, size: $0.1) }))
+        dash.current = dash.pages.count - 1
     }
 
     private var pageBar: some View {
@@ -239,7 +275,7 @@ struct WidgetCard: View {
             content
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .sheet(item: $zoom) { p in ZoomedProduct(product: p, bust: bust) }
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
@@ -449,7 +485,7 @@ struct DashEditor: View {
                 } header: {
                     Text("Widgets")
                 } footer: {
-                    Text("Drag to reorder. Large widgets take a full row.")
+                    Text("Drag to reorder. On wide screens tiles sit side by side like the website: small, medium, large (half) and full width.")
                 }
                 Section {
                     Button("Reset to the website's layout") { dash.resetToWebsite() }
@@ -490,7 +526,7 @@ struct WidgetCatalog: View {
             List {
                 Section("Your location") {
                     ForEach(LocalWidget.allCases, id: \.self) { l in
-                        Button { add(DashWidget(kind: l.rawValue, size: [.hourly, .radar, .models, .afd, .spaghetti].contains(l) ? .large : .medium)) } label: {
+                        Button { add(DashWidget(kind: l.rawValue, size: [.hourly, .models, .afd, .spaghetti].contains(l) ? .full : [.radar, .daily, .nwstext, .storms, .scales].contains(l) ? .large : .medium)) } label: {
                             Label(l.title, systemImage: l.icon)
                         }
                     }
@@ -530,4 +566,56 @@ struct WidgetCatalog: View {
     }
 
     private func add(_ w: DashWidget) { dash.add(w); dismiss() }
+}
+
+// MARK: - Grid like the website's (12 columns: small 3, medium 4, large 6, full 12)
+
+struct TileSizeKey: LayoutValueKey { static let defaultValue = 1 }
+
+/// Tiles flow left to right and wrap, each spanning columns by size. Narrower screens use wider spans,
+/// the same breakpoints as the website. Tiles in a row share the row's height.
+struct DashGridLayout: Layout {
+    var spacing: CGFloat = 14
+
+    private func span(_ code: Int, _ width: CGFloat) -> Int {
+        if width >= 1000 { return [3, 4, 6, 12][min(max(code, 0), 3)] }
+        if width >= 620 { return [6, 6, 12, 12][min(max(code, 0), 3)] }
+        return 12
+    }
+
+    /// Rows of (subview index, x, width), plus each row's height.
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [(items: [(Int, CGFloat, CGFloat)], height: CGFloat)] {
+        let col = (width - 11 * spacing) / 12
+        var rows: [(items: [(Int, CGFloat, CGFloat)], height: CGFloat)] = []
+        var cur: [(Int, CGFloat, CGFloat)] = [], used = 0, h: CGFloat = 0
+        for (i, sv) in subviews.enumerated() {
+            let sp = span(sv[TileSizeKey.self], width)
+            if used + sp > 12, !cur.isEmpty { rows.append((cur, h)); cur = []; used = 0; h = 0 }
+            let w = CGFloat(sp) * col + CGFloat(sp - 1) * spacing
+            let x = CGFloat(used) * (col + spacing)
+            cur.append((i, x, w))
+            h = max(h, sv.sizeThatFits(ProposedViewSize(width: w, height: nil)).height)
+            used += sp
+        }
+        if !cur.isEmpty { rows.append((cur, h)) }
+        return rows
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 800
+        let rows = arrange(width, subviews)
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(bounds.width, subviews) {
+            for (i, x, w) in row.items {
+                subviews[i].place(at: CGPoint(x: bounds.minX + x, y: y), anchor: .topLeading,
+                                  proposal: ProposedViewSize(width: w, height: row.height))
+            }
+            y += row.height + spacing
+        }
+    }
 }
