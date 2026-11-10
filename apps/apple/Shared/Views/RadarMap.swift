@@ -1108,8 +1108,9 @@ struct RadarMap: PlatformViewRepresentable {
         @MainActor private func loadSites() async {
             let cur = parent.radar.site?.id
             let pts = await LiveData.radarSites().map { s in
+                // a tiny radar dish instead of the station name (the name shows when you tap it)
                 WxPoint(.init(latitude: s.lat, longitude: s.lon), title: "\(s.id) · \(s.name)", subtitle: "NEXRAD Doppler radar",
-                        color: s.id == cur ? .hex("#8b5cf6") : .hex("#1e1b4b"), size: 0, layer: .sites, label: s.id, darkText: false)
+                        color: s.id == cur ? .hex("#a78bfa") : .hex("#c4b5fd"), size: s.id == cur ? 18 : 13, layer: .sites)
             }
             put(.sites, [], pts)
         }
@@ -1419,7 +1420,9 @@ struct RadarMap: PlatformViewRepresentable {
                 let id = w.label == nil ? "wxpoint" : "wxlabel"
                 let v = m.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: w, reuseIdentifier: id)
                 v.annotation = w
-                if let text = w.label {
+                if w.layer == .sites {
+                    v.image = Self.dish(w.color, w.size)
+                } else if let text = w.label {
                     v.image = Self.badge(text, w.color, dark: w.darkText)
                 } else {
                     v.image = Self.dot(w.color, w.size)
@@ -1441,9 +1444,9 @@ struct RadarMap: PlatformViewRepresentable {
             if w.layer == .cams, let u = w.link {
                 m.deselectAnnotation(w, animated: false)
                 parent.onCamera?(w.title ?? "Buoy camera", u)
-            } else if w.layer == .sites, let id = w.label {
+            } else if w.layer == .sites, let t = w.title, let id = t.components(separatedBy: " · ").first {
                 m.deselectAnnotation(w, animated: false)
-                let name = (w.title ?? "").components(separatedBy: " · ").last ?? ""
+                let name = t.components(separatedBy: " · ").dropFirst().joined(separator: " · ")
                 parent.onSite?(RadarService.Site(id: id, name: name, lat: w.coordinate.latitude, lon: w.coordinate.longitude))
             }
         }
@@ -1490,6 +1493,12 @@ struct RadarMap: PlatformViewRepresentable {
             let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .bold).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
             return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
         }
+        /// Micro Doppler site: a little radar dish on a dark disc.
+        static func dish(_ color: NSColor, _ size: CGFloat) -> NSImage? {
+            let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [color, NSColor(white: 0.08, alpha: 0.85)]))
+            return NSImage(systemSymbolName: "antenna.radiowaves.left.and.right.circle.fill", accessibilityDescription: "Radar site")?.withSymbolConfiguration(cfg)
+        }
         static func dot(_ color: NSColor, _ size: CGFloat) -> NSImage {
             NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
                 color.setFill(); NSColor.black.withAlphaComponent(0.7).setStroke()
@@ -1513,6 +1522,12 @@ struct RadarMap: PlatformViewRepresentable {
         static func symbol(_ name: String, color: UIColor, size: CGFloat) -> UIImage? {
             UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: .bold))?
                 .withTintColor(color, renderingMode: .alwaysOriginal)
+        }
+        /// Micro Doppler site: a little radar dish on a dark disc.
+        static func dish(_ color: UIColor, _ size: CGFloat) -> UIImage? {
+            let cfg = UIImage.SymbolConfiguration(pointSize: size, weight: .semibold)
+                .applying(UIImage.SymbolConfiguration(paletteColors: [color, UIColor(white: 0.08, alpha: 0.85)]))
+            return UIImage(systemName: "antenna.radiowaves.left.and.right.circle.fill", withConfiguration: cfg)
         }
         static func dot(_ color: UIColor, _ size: CGFloat) -> UIImage {
             UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
