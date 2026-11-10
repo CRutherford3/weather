@@ -46,21 +46,28 @@ struct SearchView: View {
 struct PlansView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("billYearly") private var yearly = true
 
     private let features: [Plan: [String]] = [
-        .free: ["Live radar and satellite", "Forecasts and NWS alerts", "Weather map dashboard"],
-        .plus: ["Everything in Free, no ads", "Every map layer, including lightning", "Hurricane tracker"],
-        .pro: ["Everything in Plus", "iPad and Mac pro workspace", "Route weather with EV charging stops", "Hail history, marine and offshore", "Pro map collection"],
+        .free: ["Live radar and satellite", "Forecasts and NWS alerts", "Home Screen widgets", "Weather map dashboard"],
+        .plus: ["Everything in Free, no ads", "Every map layer: lightning, rain rate, echo tops, road weather", "Severe weather and rain alerts for your places", "Hurricane tracker"],
+        .pro: ["Everything in Plus", "Doppler radar at any site: 4 tilts, velocity, dual-pol, VIL", "iPad and Mac pro workspace", "Route weather with EV charging stops", "Hail history, marine and offshore", "Pro map collection"],
     ]
+    private let fallback: [Plan: (month: String, year: String)] = [.plus: ("$2.99", "$24.99"), .pro: ("$9.99", "$59.99")]
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    Picker("Billing", selection: $yearly) {
+                        Text("Monthly").tag(false)
+                        Text("Yearly (save up to 50%)").tag(true)
+                    }
+                    .pickerStyle(.segmented)
                     ForEach(Plan.allCases, id: \.self) { p in card(p) }
                     radarPackCard
                     Button("Restore purchases") { Task { await store.restore() } }.padding(.top, 4)
-                    Text("Subscriptions renew monthly until canceled in your App Store account settings. The Radar Pack is a one-time purchase.")
+                    Text("Subscriptions renew each month or year until canceled in your App Store account settings. A free trial turns into a paid yearly plan unless canceled at least 24 hours before it ends. The Radar Pack is a one-time purchase.")
                         .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     if let m = store.message { Text(m).font(.footnote).foregroundStyle(.orange) }
                 }
@@ -79,11 +86,11 @@ struct PlansView: View {
             HStack {
                 Label("Pro Radar Pack", systemImage: "dot.radiowaves.left.and.right").font(.title2.bold())
                 Spacer()
-                Text(store.radarPackProduct?.displayPrice ?? "$9.99").font(.headline)
+                Text(store.radarPackProduct?.displayPrice ?? "$6.99").font(.headline)
             }
-            Text("One-time purchase. Yours forever, no subscription.").foregroundStyle(.secondary)
-            ForEach(["Every map layer unlocked", "Lightning, hail, hurricane tracker, winds, temperatures, air quality",
-                     "Buoys, waves, sea temperature, nautical charts, traffic, power outages", "Works on iPhone, iPad and Mac"], id: \.self) {
+            Text("One-time purchase. Doppler radar tools forever, no subscription.").foregroundStyle(.secondary)
+            ForEach(["Any NEXRAD radar site, at 4 tilt angles", "Velocity for spotting rotation",
+                     "Dual-pol: hail and debris, precipitation type, VIL, echo tops", "Past 48 hours and future radar", "Works on iPhone, iPad and Mac"], id: \.self) {
                 Label($0, systemImage: "checkmark").font(.subheadline)
             }
             Button(store.radarPack ? "Purchased" : "Buy once") { Task { await store.buyRadarPack() } }
@@ -100,12 +107,15 @@ struct PlansView: View {
             HStack {
                 Text(p.name).font(.title2.bold())
                 Spacer()
-                Text(p == .free ? "Free" : store.product(for: p)?.displayPrice.appending("/mo") ?? (p == .plus ? "$2.99/mo" : "$9.99/mo")).font(.headline)
+                Text(priceText(p)).font(.headline)
+            }
+            if p != .free, let note = savingsText(p) {
+                Text(note).font(.caption.bold()).foregroundStyle(.green)
             }
             Text(p.blurb).foregroundStyle(.secondary)
             ForEach(features[p] ?? [], id: \.self) { f in Label(f, systemImage: "checkmark").font(.subheadline) }
             if p != .free {
-                Button(current ? "Current plan" : "Get \(p.name)") { Task { await store.buy(p) } }
+                Button(current ? "Current plan" : (yearly ? (store.trialText(p).map { "Start \($0)" } ?? "Get \(p.name) yearly") : "Get \(p.name)")) { Task { await store.buy(p, yearly: yearly) } }
                     .buttonStyle(.borderedProminent).disabled(current).frame(maxWidth: .infinity)
             }
         }
@@ -113,12 +123,35 @@ struct PlansView: View {
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(p == .pro ? Color.purple : .clear, lineWidth: 2))
     }
+
+    private func priceText(_ p: Plan) -> String {
+        guard p != .free, let fb = fallback[p] else { return "Free" }
+        if yearly { return (store.product(for: p, yearly: true)?.displayPrice ?? fb.year) + "/yr" }
+        return (store.product(for: p)?.displayPrice ?? fb.month) + "/mo"
+    }
+
+    /// "About $2.08/mo, save 30%" for yearly; "or $24.99/yr and save 30%" for monthly.
+    private func savingsText(_ p: Plan) -> String? {
+        guard let fb = fallback[p] else { return nil }
+        let m = store.product(for: p)?.price ?? Decimal(string: String(fb.month.dropFirst())) ?? 0
+        let y = store.product(for: p, yearly: true)?.price ?? Decimal(string: String(fb.year.dropFirst())) ?? 0
+        let mD = NSDecimalNumber(decimal: m).doubleValue, yD = NSDecimalNumber(decimal: y).doubleValue
+        guard mD > 0, yD > 0 else { return nil }
+        let pct = Int(((1 - yD / (mD * 12)) * 100).rounded())
+        if yearly {
+            let per = (store.product(for: p, yearly: true)?.priceFormatStyle).map { (y / 12).formatted($0) } ?? String(format: "$%.2f", yD / 12)
+            return ["About \(per)/mo, save \(pct)%", store.trialText(p)].compactMap { $0 }.joined(separator: " · ")
+        }
+        return "or \(store.product(for: p, yearly: true)?.displayPrice ?? fb.year)/yr and save \(pct)%"
+    }
 }
 
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var store: Store
     @State private var showPlans = false
+    @State private var alertsOn = AlertMonitor.isOn
+    @State private var alertsDenied = false
 
     var body: some View {
         Form {
@@ -129,6 +162,18 @@ struct SettingsView: View {
                     ForEach(Plan.allCases, id: \.self) { Text($0.name).tag($0) }
                 }
                 #endif
+            }
+            Section {
+                Toggle(isOn: Binding(get: { alertsOn && store.effectivePlan >= .plus }, set: { on in
+                    if store.effectivePlan < .plus { showPlans = true; return }
+                    if on { Task { alertsOn = await AlertMonitor.enable(); if !alertsOn { alertsDenied = true } } }
+                    else { AlertMonitor.disable(); alertsOn = false }
+                })) {
+                    HStack { Text("Severe weather and rain alerts"); TierBadge(plan: .plus) }
+                }
+                if alertsDenied { Text("Notifications are off for DopplerIQ. Turn them on in System Settings > Notifications.").font(.footnote).foregroundStyle(.orange) }
+            } header: { Text("Alerts") } footer: {
+                Text("Warnings for your location and saved places (tornado, severe thunderstorm, flash flood, hurricane, winter storm and more), plus a heads-up before rain starts.")
             }
             Section("Appearance") {
                 Picker("Appearance", selection: $state.appearance) {
@@ -167,7 +212,7 @@ struct AdBanner: View {
             VStack(spacing: 2) {
                 Text("ADVERTISEMENT").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                 Text("Go ad-free with DopplerIQ Plus").font(.subheadline.bold())
-                if kind == .inline { Text("Every map layer, no ads. $2.99/mo").font(.caption).foregroundStyle(.secondary) }
+                if kind == .inline { Text("Every map layer, no ads. From $24.99/yr").font(.caption).foregroundStyle(.secondary) }
             }
             .frame(maxWidth: .infinity, minHeight: kind == .banner ? 50 : 90)
             .background(LinearGradient(colors: [.purple.opacity(0.25), .blue.opacity(0.15)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 12))

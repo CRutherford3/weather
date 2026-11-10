@@ -30,7 +30,7 @@ export const STYLES = {
   },
 };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, rainrate: false, echotops: false, road: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: store.get('mapStyle', 'auto'),
   radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
@@ -42,27 +42,35 @@ export const S = {
   surgeCat: store.get('surgeCat', '3'),
   snowDay: store.get('snowDay', '1'), snowAmt: store.get('snowAmt', '4'),
   site: store.get('radarSite', null),     // e.g. 'MLB' for KMLB
-  siteProd: store.get('siteProd', 'N0B') === 'N0S' || store.get('siteProd', 'N0B') === 'N0U' ? 'N0S' : 'N0B', // N0B reflectivity, N0S storm-relative velocity
+  siteProd: store.get('siteProd', 'N0B') === 'N0S' || store.get('siteProd', 'N0B') === 'N0U' ? 'N0S' : 'N0B', // legacy
+  // Doppler product: ref, vel, srv (storm relative), cc, zdr, hhc, vil, eet. Tilt 0-3 (lowest four scans).
+  siteFam: store.get('siteFam', store.get('siteProd', 'N0B') === 'N0S' ? 'srv' : 'ref'),
+  tilt: +store.get('siteTilt', 0) || 0,
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
-const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); };
+const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); store.set('siteFam', S.siteFam); store.set('siteTilt', S.tilt); };
 
 export const LAYER_GROUPS = [
+  // Pro group: single-site Doppler radar (also in the Radar Pack), then marine and space layers
+  ['Pro: Radar, Marine & Space', [
+    ['sites', 'Doppler Radar (tap a site)', 'dopplerOpts'],
+    ['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms'],
+    ['iss', 'ISS Orbital Tracking'],
+  ], 'pro'],
   ['Radar & Satellite', [
-    ['radar', 'Radar', 'radarOpts'], ['sites', 'Doppler Radar (tap a site)'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rain', 'Rain Totals', 'rainOpts'],
+    ['radar', 'Radar', 'radarOpts'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rainrate', 'Rain Rate (now)'], ['rain', 'Rain Totals', 'rainOpts'], ['echotops', 'Echo Tops (storm height)'],
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
     ['hail', 'Hail Map', 'hailOpts'],
   ]],
   ['Conditions', [
-    ['fronts', 'Fronts & Pressure'], ['winds', 'Winds (animated)'], ['temps', 'Temperatures'], ['aqi', 'Air Quality'],
+    ['fronts', 'Fronts & Pressure'], ['winds', 'Winds (animated)'], ['temps', 'Temperatures'], ['road', 'Road Weather (estimated)'], ['aqi', 'Air Quality'],
   ]],
   ['Tropics', [['tropics', 'Hurricane Tracker'], ['twoutlook', 'Development Areas (2 & 7 day)'], ['windprob', 'Tropical Storm Wind Chances'], ['surgerisk', 'Storm Surge Risk', 'surgeOpts']]],
   ['Snow & Ice', [['snowdepth', 'Snow Depth Now'], ['snowprob', 'Snow & Ice Chances', 'snowOpts'], ['snowcover', 'Snow & Sea Ice Cover']]],
-  ['Marine', [['buoys', 'Buoys & Seas (live)'], ['waves', 'Wave Height Forecast'], ['cams', 'Buoy Cameras'], ['sst', 'Sea Surface Temperature'], ['charts', 'Nautical Charts (NOAA)'], ['rigs', 'Offshore Oil & Gas Platforms']]],
   ['More', [
-    ['places', 'My Places'], ['outages', 'Power Outages (partial US)'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'], ['iss', 'ISS Orbital Tracking'],
+    ['places', 'My Places'], ['outages', 'Power Outages (partial US)'], ['traffic', 'Traffic (US roads)'], ['drought', 'Droughts'], ['quakes', 'Earthquakes'], ['fires', 'Wildfires'],
   ]],
 ];
 
@@ -237,10 +245,22 @@ async function buildRadar() {
   if (S.radarSrc === 'site' && !(S.layers.sites && canLayer('sites'))) S.radarSrc = 'us'; // Doppler layer off: back to Hi-Def
   if (S.radarSrc === 'site') {
     if (!S.site) { const c = map.getCenter(); S.site = nearestSite(await radarSites(), c.lat, c.lng)?.code || 'MLB'; save(); }
-    let scans = [];
-    try { scans = (await siteScans(S.site, S.siteProd)).slice(-12); } catch { /* fall back to latest */ }
-    if (!scans.length) frames.push({ t: Date.now(), url: `${IEM}/ridge::${S.site}-${S.siteProd}-0/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 120e3)}`, maxzoom: 12, site: true });
-    for (const ts of scans) frames.push({ t: new Date(ts).getTime(), url: `${IEM}/ridge::${S.site}-${S.siteProd}-${ts.replace(/[-:TZ]/g, '').slice(0, 12)}/{z}/{x}/{y}.png`, maxzoom: 12 });
+    const ridge = S.siteFam === 'srv' ? 'N0S' : S.siteFam === 'ref' && !S.tilt ? 'N0B' : null; // IEM tiles for the lowest scan
+    if (ridge) {
+      let scans = [];
+      try { scans = (await siteScans(S.site, ridge)).slice(-12); } catch { /* fall back to latest */ }
+      if (!scans.length) frames.push({ t: Date.now(), url: `${IEM}/ridge::${S.site}-${ridge}-0/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 120e3)}`, maxzoom: 12, site: true });
+      for (const ts of scans) frames.push({ t: new Date(ts).getTime(), url: `${IEM}/ridge::${S.site}-${ridge}-${ts.replace(/[-:TZ]/g, '').slice(0, 12)}/{z}/{x}/{y}.png`, maxzoom: 12 });
+    } else {
+      // Tilts, velocity, dual-pol, VIL and echo tops: decoded from NOAA Level III by /api/radar
+      const st = (await radarSites()).find((x) => x.code === S.site);
+      if (st) {
+        const j = await getData(`/api/radar?site=${S.site}&family=${S.siteFam}&tilt=${S.tilt}&lat=${st.lat.toFixed(3)}&lon=${st.lon.toFixed(3)}`, { cache: 60e3 });
+        const [w, s, e, n] = j.bounds || [];
+        for (const f of j.frames || []) frames.push({ t: f.t, image: f.url, coords: [[w, n], [e, n], [e, s], [w, s]] });
+        if (!frames.length) toast(`${SITE_PRODUCTS[S.siteFam]?.[0] || 'That product'} isn't available from K${S.site} right now`);
+      }
+    }
   } else if (S.radarSrc === 'us') {
     let base = Math.floor(Date.now() / 300e3) * 300e3 - 300e3;
     try { const j = await feeds.iemTms(); const s = (j.services || []).find((x) => /n0q/i.test(x.id || '') && x.utc_valid); if (s) base = new Date(s.utc_valid).getTime(); } catch { /* estimate */ }
@@ -258,7 +278,8 @@ async function buildRadar() {
   const b = beforeId();
   R.frames = frames.map((f, i) => {
     const id = `radar-${i}`;
-    map.addSource(id, { type: 'raster', tiles: [f.url], tileSize: 256, maxzoom: f.maxzoom });
+    if (f.image) map.addSource(id, { type: 'image', url: f.image, coordinates: f.coords });
+    else map.addSource(id, { type: 'raster', tiles: [f.url], tileSize: 256, maxzoom: f.maxzoom });
     map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-fade-duration': 0, 'raster-opacity-transition': { duration: 0 } } }, b);
     return { ...f, id };
   });
@@ -401,8 +422,26 @@ ADD.lsr = async () => {
 };
 
 // ================= Radar sites: tap one to view that single radar =================
-export async function useSite(code, prod) {
-  S.site = code; if (prod) S.siteProd = prod; S.radarSrc = 'site'; S.layers.radar = true; save();
+// [label, has tilts, legend]
+export const SITE_PRODUCTS = {
+  ref: ['Reflectivity', true], vel: ['Velocity', true], srv: ['Storm-Relative Velocity', false], cc: ['Correlation Coefficient (debris, hail)', true],
+  zdr: ['Differential Reflectivity', true], hhc: ['Precipitation Type', true], vil: ['VIL (hail potential)', false], eet: ['Echo Tops', false],
+};
+const TILTS = ['0.5°', '0.9°', '1.3°', '1.8°'];
+const LEGENDS = {
+  vel: 'linear-gradient(90deg,#023a02,#00c000,#9ff59f,#8a8a8a,#f5b8b8,#e01f1f,#4d0000)',
+  srv: 'linear-gradient(90deg,#023a02,#00c000,#9ff59f,#8a8a8a,#f5b8b8,#e01f1f,#4d0000)',
+  cc: 'linear-gradient(90deg,#130c5a,#2c26c9,#5ad2f0,#26b04a,#f6e93f,#f26c22,#e5281c,#d63ad6)',
+  zdr: 'linear-gradient(90deg,#6f6f6f,#1e3cff,#2fd56b,#f6e93f,#f26c22,#b0103c,#f0b0f0)',
+  hhc: 'linear-gradient(90deg,#8fd3ff,#3e70ff,#2fd56b,#0a8a2a,#f6e93f,#e5281c,#ff2ee0)',
+  vil: 'linear-gradient(90deg,#5ad2f0,#26b04a,#f6e93f,#f26c22,#a8101c,#d63ad6)',
+  eet: 'linear-gradient(90deg,#5ad2f0,#26b04a,#f6e93f,#f26c22,#a8101c,#d63ad6)',
+};
+export async function useSite(code, prod, tilt) {
+  S.site = code;
+  if (prod) { S.siteFam = prod === 'N0B' ? 'ref' : prod === 'N0S' ? 'srv' : prod; S.siteProd = S.siteFam === 'srv' ? 'N0S' : 'N0B'; }
+  if (tilt != null) S.tilt = SITE_PRODUCTS[S.siteFam]?.[1] ? +tilt : 0;
+  S.radarSrc = 'site'; S.layers.radar = true; save();
   refresh('radar'); updateDock(); if (active.sites) refresh('sites');
 }
 ADD.sites = async () => {
@@ -413,14 +452,21 @@ ADD.sites = async () => {
     { type: 'symbol', top: true, layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.35], 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': false }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b1020', 'text-halo-width': 1.6 } },
   ], (f, ll) => {
     const p = f.properties, cur = S.radarSrc === 'site' && S.site === p.code;
+    const tilted = SITE_PRODUCTS[S.siteFam]?.[1];
     const pop = popup(f.geometry.coordinates, `<div class="qp"><div class="qp-name">${esc(p.id)} · ${esc(p.name)}</div><div class="qp-row">${cur ? 'Showing this radar now' : 'NEXRAD Doppler radar'}</div>
-      <div class="qp-btns"><button class="btn small${cur && S.siteProd === 'N0B' ? '' : ' ghost'}" data-sp="N0B">Reflectivity</button><button class="btn small${cur && S.siteProd === 'N0S' ? '' : ' ghost'}" data-sp="N0S">Velocity</button></div>
+      <div class="qp-prods">${Object.entries(SITE_PRODUCTS).map(([k, [t]]) => `<button class="btn small${cur && S.siteFam === k ? '' : ' ghost'}" data-sp="${k}">${t.replace(/ \(.*\)/, '')}</button>`).join('')}</div>
+      <div class="qp-row muted small">Tilt (beam angle)</div>
+      <div class="seg small qp-tilt">${TILTS.map((t, i) => `<button data-tilt="${i}" class="${cur && S.tilt === i && tilted ? 'on' : ''}"${tilted || !cur ? '' : ' disabled'}>${t}</button>`).join('')}</div>
       ${cur ? '<div class="qp-btns"><button class="btn small ghost" data-sp="mosaic">Back to US mosaic</button></div>' : ''}</div>`);
-    setTimeout(() => pop.getElement()?.querySelectorAll('[data-sp]').forEach((b) => b.onclick = () => {
-      pop.remove();
-      if (b.dataset.sp === 'mosaic') { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); return; }
-      useSite(p.code, b.dataset.sp);
-    }), 0);
+    setTimeout(() => {
+      const el = pop.getElement();
+      el?.querySelectorAll('[data-sp]').forEach((b) => b.onclick = () => {
+        pop.remove();
+        if (b.dataset.sp === 'mosaic') { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); return; }
+        useSite(p.code, b.dataset.sp, cur ? S.tilt : 0);
+      });
+      el?.querySelectorAll('[data-tilt]').forEach((b) => b.onclick = () => { pop.remove(); useSite(p.code, cur ? S.siteFam : 'ref', +b.dataset.tilt); });
+    }, 0);
   });
 };
 
@@ -660,6 +706,36 @@ ADD.waves = async () => gridLayer('waves', async (g) => {
 ADD.aqi = async () => gridLayer('aqi', async (g) => (await aqGrid(g.lats, g.lons)).map((p) => p.current?.us_aqi != null && ({
   html: `<div style="background:${aqiInfo(p.current.us_aqi).color}"><b>${Math.round(p.current.us_aqi)}</b><small>AQI</small></div>`,
 })));
+// ================= Rain rate, echo tops, road weather =================
+// MRMS precipitation rate (inches per hour), every 2 minutes. IEM names each image by its UTC time.
+const IEMC = 'https://mesonet.agron.iastate.edu/c/tile.py/1.0.0';
+ADD.rainrate = async () => {
+  let t = Math.floor((Date.now() - 6 * 60e3) / 120e3) * 120e3;
+  try { const j = await feeds.iemTms(); const s = (j.services || []).find((x) => /a2m/i.test(x.id || '') && x.utc_valid); if (s) t = new Date(s.utc_valid).getTime(); } catch { /* estimate */ }
+  const stamp = new Date(t).toISOString().replace(/[-:T]/g, '').slice(0, 12);
+  return raster('rainrate', `${IEMC}/mrms::a2m-${stamp}/{z}/{x}/{y}.png`, { opacity: 0.8, maxzoom: 10, before: firstRadarOr() });
+};
+// Echo tops: how high the storm tops reach (NEXRAD EET mosaic). Taller tops mean stronger updrafts.
+ADD.echotops = async () => raster('echotops', `${IEM}/nexrad-eet/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.75, maxzoom: 10 });
+// Road weather, estimated from the latest weather at each spot: snow, ice, wet or dry pavement.
+const ROAD = { dry: ['Dry', '#16a34a'], wet: ['Wet', '#2563eb'], slush: ['Slushy', '#7c3aed'], snow: ['Snow', '#e5e7eb'], ice: ['Icy', '#db2777'], frost: ['Frost risk', '#06b6d4'] };
+export function roadState(h, i) {
+  const t = h.temperature_2m[i], prev = (k) => h[k].slice(Math.max(0, i - 3), i + 1).reduce((a, b) => a + (b || 0), 0);
+  const p3 = prev('precipitation'), s3 = prev('snowfall'), code = h.weather_code[i];
+  if ([56, 57, 66, 67].includes(code) || (t <= 0 && p3 >= 0.2 && s3 < 0.1)) return 'ice';
+  if (s3 >= 0.5 || [71, 73, 75, 77, 85, 86].includes(code)) return t > 1 ? 'slush' : 'snow';
+  if (p3 >= 0.2 || h.precipitation[i] > 0) return t <= 1 ? 'ice' : 'wet';
+  if (t <= 1 && (h.dew_point_2m?.[i] ?? -99) >= t - 1) return 'frost';
+  return 'dry';
+}
+ADD.road = async () => gridLayer('road', async (g) => {
+  let j = await getData(`https://api.open-meteo.com/v1/forecast?latitude=${g.lats.join(',')}&longitude=${g.lons.join(',')}&hourly=temperature_2m,dew_point_2m,precipitation,snowfall,weather_code&past_hours=3&forecast_hours=1&timezone=GMT`, { cache: 600e3 });
+  if (!Array.isArray(j)) j = [j];
+  return j.map((p) => { const h = p?.hourly; if (!h?.time?.length) return null;
+    const now = Date.now(); let i = h.time.findIndex((t) => new Date(t + 'Z').getTime() > now) - 1; if (i < 0) i = h.time.length - 1;
+    const [label, color] = ROAD[roadState(h, i)];
+    return { html: `<div class="road-chip" style="background:${color}${label === 'Snow' ? ';color:#111' : ''}"><b>${label}</b></div>` }; });
+});
 function gridLayer(id, fetchCells) {
   let list = [], seq = 0;
   const draw = async () => {
@@ -840,8 +916,10 @@ function buildDock() {
 }
 function updateDock() {
   const on = S.layers.radar;
-  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : S.radarSrc === 'site' ? `K${S.site || ''} ${S.siteProd === 'N0S' ? 'Velocity' : 'Radar'}` : 'Global Radar') : 'Radar Off';
-  $('#legendBar').classList.toggle('vel', on && S.radarSrc === 'site' && S.siteProd === 'N0S');
+  const sp = SITE_PRODUCTS[S.siteFam] || SITE_PRODUCTS.ref;
+  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : S.radarSrc === 'site' ? `K${S.site || ''} ${sp[0].replace(/ \(.*\)/, '')}${sp[1] ? ` ${TILTS[S.tilt]}` : ''}` : 'Global Radar') : 'Radar Off';
+  $('#legendBar').classList.remove('vel');
+  $('#legendBar').style.background = on && S.radarSrc === 'site' && LEGENDS[S.siteFam] ? LEGENDS[S.siteFam] : `linear-gradient(90deg,${DBZ_LEGEND.join(',')})`;
   $('#legendBar').style.opacity = on ? 1 : 0.25;
   $('#tlPlay').disabled = !on;
   if (!on) { $('#tlTime').textContent = '--'; $('#tlAgo').textContent = ''; }
@@ -877,15 +955,55 @@ const OPTS = {
   surgeOpts: () => `<div class="seg" data-o="surgeCat">${['1', '2', '3', '4', '5'].map((v) => `<button data-v="${v}" class="${S.surgeCat === v ? 'on' : ''}">Cat ${v}</button>`).join('')}</div><small class="muted">Worst-case flooding above ground for a hurricane of that strength (NHC). Not a forecast for any one storm.</small>`,
   snowOpts: () => `<div class="seg" data-o="snowDay">${['1', '2', '3'].map((v) => `<button data-v="${v}" class="${S.snowDay === v ? 'on' : ''}">Day ${v}</button>`).join('')}</div><div class="seg" data-o="snowAmt">${[['4', '4"+ snow'], ['8', '8"+'], ['12', '12"+'], ['ice', '¼" ice']].map(([v, t]) => `<button data-v="${v}" class="${S.snowAmt === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">WPC chance of reaching that amount.</small>`,
   hailOpts: () => `<div class="seg" data-o="hail">${[['24', '24 hours'], ['72', '3 days'], ['168', '7 days']].map(([v, t]) => `<button data-v="${v}" class="${S.hail === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">Hail reports sized by stone size, plus today's SPC hail risk area.</small>`,
+  dopplerOpts: () => {
+    const on = S.radarSrc === 'site' && S.layers.radar;
+    const tilted = SITE_PRODUCTS[S.siteFam]?.[1];
+    return `<small class="muted">${on ? `Showing K${S.site}. ` : 'Tap a radar dish on the map, or pick a product to use the radar nearest you. '}</small>
+      <div class="qp-prods" data-doppler>${Object.entries(SITE_PRODUCTS).map(([k, [t]]) => `<button class="btn small${on && S.siteFam === k ? '' : ' ghost'}" data-sp="${k}">${t.replace(/ \(.*\)/, '')}</button>`).join('')}</div>
+      <div class="seg small qp-tilt" data-dtilt>${TILTS.map((t, i) => `<button data-tilt="${i}" class="${on && tilted && S.tilt === i ? 'on' : ''}"${on && !tilted ? ' disabled' : ''}>${t}</button>`).join('')}</div>
+      ${on ? '<button class="btn small ghost" data-sp="mosaic">Back to Hi-Def mosaic</button>' : ''}`;
+  },
   rainOpts: () => `<div class="seg" data-o="rain">${[['1h', 'Past hour'], ['24h', '24 hours'], ['72h', '72 hours']].map(([v, t]) => `<button data-v="${v}" class="${S.rain === v ? 'on' : ''}">${t}</button>`).join('')}</div>`,
 };
 function openLayersSheet() {
   const row = ([id, name, opts]) => `<div class="lrow" data-id="${id}">
     <button class="lrow-main" ${opts ? `data-exp="${id}"` : ''}><span>${name} ${badge(tierOf(id))}</span>${opts ? '<i class="chev">›</i>' : ''}</button>
     <label class="tg${canLayer(id) ? '' : ' locked'}"><input type="checkbox" data-layer="${id}" ${S.layers[id] && canLayer(id) ? 'checked' : ''}><span></span></label>
-    ${opts ? `<div class="lrow-opts" hidden>${OPTS[opts]()}</div>` : ''}</div>`;
-  openSheet('Layers', LAYER_GROUPS.map(([g, rows]) => `<div class="lgroup"><div class="sheet-sub">${g}</div>${rows.map(row).join('')}</div>`).join('') +
+    ${opts ? `<div class="lrow-opts" ${id === 'sites' && S.layers.sites && canLayer('sites') ? '' : 'hidden'}>${OPTS[opts]()}</div>` : ''}</div>`;
+  // Collapsible groups (remembered). Radar & Satellite and Pro start open.
+  const openSet = new Set(store.get('layerGroupsOpen', ['Radar & Satellite', 'Pro: Radar, Marine & Space']));
+  const group = ([g, rows, kind]) => {
+    const n = rows.filter(([id]) => S.layers[id] && canLayer(id)).length;
+    const body = kind === 'pro'
+      ? `${row(rows[0])}<div class="sheet-sub lsub">Marine & Space</div>${rows.slice(1).map(row).join('')}`
+      : rows.map(row).join('');
+    return `<div class="lgroup${openSet.has(g) ? ' open' : ''}${kind === 'pro' ? ' pro' : ''}" data-g="${esc(g)}">
+      <button class="lgroup-head"><span>${g}${kind === 'pro' ? ` ${badge('pro')}` : ''}</span><span class="muted small">${n ? `${n} on` : ''}</span><i class="chev">›</i></button>
+      <div class="lgroup-body">${body}</div></div>`;
+  };
+  openSheet('Layers', LAYER_GROUPS.map(group).join('') +
     '<p class="muted small sheet-foot">Tap anywhere on the map for that spot\'s forecast, or to save it as a place.</p>', (b) => {
+    $$('.lgroup-head', b).forEach((h) => h.onclick = () => {
+      const g = h.parentElement; g.classList.toggle('open');
+      const cur = new Set(store.get('layerGroupsOpen', ['Radar & Satellite', 'Pro: Radar, Marine & Space']));
+      if (g.classList.contains('open')) cur.add(g.dataset.g); else cur.delete(g.dataset.g);
+      store.set('layerGroupsOpen', [...cur]);
+    });
+    // Doppler product and tilt (Pro or Radar Pack)
+    const nearestThen = async (fam, tilt) => {
+      if (!canLayer('sites')) { gate('sites', 'Doppler radar'); return; }
+      S.layers.sites = true;
+      let code = S.radarSrc === 'site' && S.site ? S.site : null;
+      if (!code) { const c = map.getCenter(); code = nearestSite(await radarSites(), c.lat, c.lng)?.code || 'MLB'; }
+      await useSite(code, fam, tilt);
+      if (!active.sites) applyLayers();
+      openLayersSheet();
+    };
+    $$('[data-doppler] [data-sp], .lrow-opts [data-sp="mosaic"]', b).forEach((x) => x.onclick = () => {
+      if (x.dataset.sp === 'mosaic') { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); openLayersSheet(); return; }
+      nearestThen(x.dataset.sp, S.radarSrc === 'site' ? S.tilt : 0);
+    });
+    $$('[data-dtilt] [data-tilt]', b).forEach((x) => x.onclick = () => nearestThen(S.radarSrc === 'site' ? S.siteFam : 'ref', +x.dataset.tilt));
     $$('[data-layer]', b).forEach((cb) => cb.onchange = () => {
       const id = cb.dataset.layer;
       if (cb.checked && !canLayer(id)) { cb.checked = false; gate(id, layerName(id)); return; }

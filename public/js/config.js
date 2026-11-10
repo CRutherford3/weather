@@ -63,4 +63,4 @@ export const KEYS = {
 // Google AdSense. Leave client blank to show house ads ("Go ad-free") in every slot.
 export const ADS = { client: '', slots: { banner: '', box: '', tall: '', inline: '' } };
 // Stripe Payment Links for each paid plan (create them in the Stripe dashboard).
-export const CHECKOUT = { plus: '', pro: '' };
+export const CHECKOUT = { plus: '', plusYearly: '', pro: '', proYearly: '', pack: '' };

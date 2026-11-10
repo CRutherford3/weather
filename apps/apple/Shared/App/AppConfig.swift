@@ -12,8 +12,13 @@ enum AppConfig {
 
     /// Auto-renewing subscriptions. Create these exact IDs in App Store Connect (one subscription group).
     static let plusMonthly = "io.dialcheck.weather.plus.monthly"
+    static let plusYearly = "io.dialcheck.weather.plus.yearly"
     static let proMonthly = "io.dialcheck.weather.pro.monthly"
-    /// One-time purchase (non-consumable): unlocks every map layer forever.
+    static let proYearly = "io.dialcheck.weather.pro.yearly"
+    static let plusIDs: Set<String> = [plusMonthly, plusYearly]
+    static let proIDs: Set<String> = [proMonthly, proYearly]
+    /// One-time purchase (non-consumable): Doppler radar features forever (single sites, tilts, velocity,
+    /// dual-pol, VIL, echo tops, past and future radar). Not every layer, so it never undercuts a subscription.
     static let radarPack = "io.dialcheck.weather.radarpack"
 
     /// Public pages (GitHub Pages from the repo's docs folder). Use these same links in App Store Connect.

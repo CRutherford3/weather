@@ -6,7 +6,9 @@ One universal SwiftUI app. iPhone gets the MyRadar-style tabs; iPad and Mac get 
 
 - Bundle ID: `io.dialcheck.weather` (permanent, so it has no app name in it; the display name can change any time)
 - Minimum: iOS 17, iPadOS 17, macOS 14
-- Subscriptions: `io.dialcheck.weather.plus.monthly` ($2.99) and `io.dialcheck.weather.pro.monthly` ($9.99)
+- Subscriptions: Plus $2.99/mo or $24.99/yr, Pro $9.99/mo or $59.99/yr (yearly plans start with a 7-day free trial)
+- One-time Pro Radar Pack: $6.99 (Doppler radar tools only)
+- Home Screen / desktop widgets (target `DopplerIQWidget`, bundle ID `io.dialcheck.weather.widget`)
 
 ## 1. Build and run (about 10 minutes)
 
@@ -41,13 +43,28 @@ If Xcode shows a build error, copy the error text and send it to me.
 
 1. https://appstoreconnect.apple.com > **Apps** > **+** > New App. Platforms: **iOS** and **macOS**.
    Bundle ID: `io.dialcheck.weather`. Name: DopplerIQ.
-2. **Subscriptions** > create a subscription group "DopplerIQ" with two auto-renewing products:
+2. **Subscriptions** > create a subscription group "DopplerIQ" with four auto-renewing products:
    - `io.dialcheck.weather.plus.monthly`, 1 month, $2.99
-   - `io.dialcheck.weather.pro.monthly`, 1 month, $9.99 (Pro should be the higher level in the group)
-   Then under **In-App Purchases** add a **Non-Consumable**: `io.dialcheck.weather.radarpack`, $9.99, name "Pro Radar Pack" (unlocks every map layer forever).
+   - `io.dialcheck.weather.plus.yearly`, 1 year, $24.99
+   - `io.dialcheck.weather.pro.monthly`, 1 month, $9.99
+   - `io.dialcheck.weather.pro.yearly`, 1 year, $59.99
+   In the group's level order put both Pro products above both Plus products.
+   On each **yearly** product open **Subscription Prices > Introductory Offers**, add a **Free** offer for **1 week**
+   (all countries). The app reads the offer from the App Store and shows "Start 7-day free trial" automatically.
+   Then under **In-App Purchases** add a **Non-Consumable**: `io.dialcheck.weather.radarpack`, $6.99, name "Pro Radar Pack"
+   (Doppler radar forever: any radar site, 4 tilts, velocity, dual-pol, VIL, echo tops, past and future radar).
+   If you already created it at $9.99, just change its price; the ID stays the same.
 3. App Privacy: the app collects **coarse location** (not linked to you, not used for tracking). Once ads are added,
    AdMob also needs its own privacy answers.
 4. Archive in Xcode (**Product > Archive**) once for an iOS device and once for **My Mac**, then **Distribute App** to App Store Connect.
+
+## Alerts and widgets
+
+- **Weather alerts (Plus):** Settings > Alerts. New NWS warnings for your location and saved places, plus a heads-up
+  before rain starts. Checked while the app is open and in the background on iPhone and iPad (iOS picks the exact
+  times, usually every 15 to 30 minutes). The Background Modes and task ID are already in `Support/Info.plist`.
+- **Widgets (free):** small, medium and large on the Home Screen and Mac desktop, plus Lock Screen widgets on iPhone.
+  Long-press a widget > Edit Widget to type a city, or leave it empty to follow your location.
 
 ## What's in v1
 
