@@ -28,7 +28,7 @@ const effTheme = () => (state.theme === 'auto' ? (mq.matches ? 'light' : 'dark')
 function applyTheme() {
   const t = effTheme();
   document.documentElement.dataset.theme = t;
-  $('meta[name="theme-color"]').content = t === 'dark' ? '#0a0f1c' : '#f3f6fb';
+  $('meta[name="theme-color"]').content = t === 'dark' ? '#0a0a0a' : '#f3f6fb';
   $('#themeBtn').innerHTML = THEME_ICONS[state.theme];
   $('#themeBtn').title = `Theme: ${state.theme} (click to change)`;
   Map.setTheme(t);

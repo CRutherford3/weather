@@ -1,8 +1,8 @@
 /* ===== Theme tokens ===== */
 :root, [data-theme="dark"] {
-  --bg: #0a0f1c; --bg2: #0f1628; --card: #121b30; --card2: #18233d; --line: rgba(148, 163, 184, .14);
-  --text: #e7eefc; --muted: #8e9cb8; --accent: #38bdf8; --accent2: #a78bfa; --good: #22c55e;
-  --glass: rgba(14, 21, 38, .86); --shadow: 0 10px 30px rgba(0, 0, 0, .45); --chart: #e7eefc;
+  --bg: #0a0a0a; --bg2: #141414; --card: #1a1a1a; --card2: #242424; --line: rgba(255, 255, 255, .1);
+  --text: #ededed; --muted: #9b9b9b; --accent: #38bdf8; --accent2: #a78bfa; --good: #22c55e;
+  --glass: rgba(18, 18, 18, .88); --shadow: 0 10px 30px rgba(0, 0, 0, .5); --chart: #ededed;
   color-scheme: dark;
 }
 [data-theme="light"] {
@@ -240,7 +240,7 @@ body.panel-open .panel { transform: none; }
 .custom-form input { padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; }
 
 /* ===== Modal / lightbox / toast ===== */
-.modal { position: fixed; inset: 0; z-index: 2000; background: rgba(2, 6, 23, .6); display: grid; place-items: center; padding: 20px; backdrop-filter: blur(3px); }
+.modal { position: fixed; inset: 0; z-index: 2000; background: rgba(0, 0, 0, .6); display: grid; place-items: center; padding: 20px; backdrop-filter: blur(3px); }
 .modal-box { width: min(820px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
 .modal-box header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .modal-box h3 { margin: 0; font-size: 18px; }
@@ -288,7 +288,7 @@ body.panel-open .panel { transform: none; }
 /* =====================================================================
    v2 radar screen (MapLibre): header card, crosshair, dock, sheets, pins
    ===================================================================== */
-#map { position: absolute; inset: 0; background: #05070d; }
+#map { position: absolute; inset: 0; background: #080808; }
 [data-theme="light"] #map { background: #dfe6ee; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
 .maplibregl-ctrl-bottom-right { bottom: 168px; }
@@ -593,7 +593,7 @@ body.popup-open .crosshair { opacity: 0; }
 .dop-map { height: 380px; border-radius: 12px; overflow: hidden; background: var(--bg2); }
 .dop-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; }
 .dop-bar .muted { margin-left: auto; }
-.dop-tip { background: rgba(11,16,32,.8) !important; color: #e9d5ff !important; border: 0 !important; box-shadow: none !important; font: 700 10.5px Inter, sans-serif; padding: 1px 4px !important; }
+.dop-tip { background: rgba(12,12,12,.8) !important; color: #e9d5ff !important; border: 0 !important; box-shadow: none !important; font: 700 10.5px Inter, sans-serif; padding: 1px 4px !important; }
 .dop-tip::before { display: none; }
 @media (max-width: 760px) { .dop-map { height: 300px; } .dop-bar .muted { display: none; } }
 /* the 16-day list spans two rows so the next widget fills the space beside it */

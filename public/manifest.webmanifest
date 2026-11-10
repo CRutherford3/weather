@@ -4,8 +4,8 @@
   "description": "Live radar, severe weather alerts, official forecasts and a customizable weather dashboard.",
   "start_url": "/#radar",
   "display": "standalone",
-  "background_color": "#0a0f1c",
-  "theme_color": "#0a0f1c",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
   "orientation": "any",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
