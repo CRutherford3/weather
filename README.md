@@ -8,6 +8,8 @@ Live radar, severe weather alerts, official forecasts, and a customizable weathe
 - Animated NEXRAD radar (11 frames, 5 minute steps), with a worldwide radar option
 - Live NWS warnings and watches drawn as polygons in official NWS colors. Tap one for the full text.
 - Satellite (true color, infrared, visible, air mass), temperature and wind across the map, 24 hour rain totals
+- Doppler radar at any NEXRAD site (Pro or the Radar Pack): reflectivity and velocity at the 4 lowest tilts, storm-relative velocity, dual-pol correlation coefficient, differential reflectivity and precipitation type, VIL and echo tops
+- Rain rate (MRMS), echo tops mosaic, and estimated road weather (dry, wet, slushy, snow, icy, frost risk)
 - SPC severe outlook, local storm reports, active hurricanes, earthquakes, wildfires
 - Dark, light, roads and satellite base maps. Tap anywhere for that spot's forecast.
 
@@ -22,9 +24,13 @@ Live radar, severe weather alerts, official forecasts, and a customizable weathe
 - Grid of widgets you can add, remove, resize and drag around (saved per browser)
 - Local widgets plus NHC tropical outlooks and storm cones, SPC outlooks and watches, WPC rain forecasts and fronts, CPC long range, GOES satellite loops, NWS radar loops, link list, and custom image or link widgets
 
+## Plans
+
+Free with ads. Plus $2.99/mo or $24.99/yr. Pro $9.99/mo or $59.99/yr. Yearly plans start with a 7-day free trial. One-time Pro Radar Pack $6.99 (Doppler radar tools only). Plus includes severe weather and rain alerts for saved places.
+
 ## Data sources
 
-All free, no API keys: National Weather Service (api.weather.gov), Open-Meteo, Iowa Environmental Mesonet, NASA GIBS, NOAA NESDIS, NHC, SPC, WPC, CPC, USGS, NIFC, RainViewer, CARTO and Esri base maps, BigDataCloud reverse geocoding.
+All free, no API keys. Single-site Doppler products come from NOAA's public NEXRAD Level III archive on AWS (`unidata-nexrad-level3`), decoded by `api/lib/nexrad3.mjs` in the `/api/radar` function. Also: National Weather Service (api.weather.gov), Open-Meteo, Iowa Environmental Mesonet, NASA GIBS, NOAA NESDIS, NHC, SPC, WPC, CPC, USGS, NIFC, RainViewer, CARTO and Esri base maps, BigDataCloud reverse geocoding.
 
 ## How it's built
 

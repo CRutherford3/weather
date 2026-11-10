@@ -8,6 +8,7 @@ import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge } 
 import { initRoute, openRoute } from './route.js';
 import { loadMarine, marineHTML } from './marine.js';
 import { getData } from './util.js';
+import { initNotify, setEnabled as setNotify, enabled as notifyOn } from './notify.js';
 
 const state = {
   loc: store.get('loc', null),
@@ -377,7 +378,7 @@ window.addEventListener('storms', (e) => updateDashboard({ storms: e.detail }));
 
 
 // ---------- settings sheet (MyRadar-style) ----------
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const ATTRIB = [
   ['National Weather Service (NOAA)', 'Forecasts, observations, alerts, radar loops', 'https://www.weather.gov/'],
   ['NOAA NEXRAD via Iowa Environmental Mesonet', 'Radar mosaic, rain totals, GOES and lightning tiles', 'https://mesonet.agron.iastate.edu/'],
@@ -422,7 +423,8 @@ function openSettings(view = 'main') {
     <p class="set-note">Keep the forecast and map centered on you as you move.</p>
     <button class="set-row" id="setPlaces"><span><b>My Places</b><small>${state.favs.length} saved</small></span><i class="chev">›</i></button>
     <div class="sheet-sub">Alerts</div>
-    <div class="set-row static"><span><b>Severe weather notifications</b><small>Push alerts for your saved places arrive with the iPhone app. Until then, warnings show in the red banner and on the map.</small></span></div>
+    <div class="lrow"><div class="lrow-main"><span>Severe weather and rain alerts ${badge('plus')}</span></div><label class="tg${can('noAds') ? '' : ' locked'}"><input type="checkbox" id="setNotify" ${notifyOn() ? 'checked' : ''}><span></span></label></div>
+    <p class="set-note">Warnings for your location and saved places, plus a heads-up before rain starts. In the browser these arrive while ${esc(APP_NAME)} is open in a tab; the iPhone, iPad and Mac apps alert you in the background.</p>
     <div class="sheet-sub">About</div>
     <button class="set-row" id="setAttrib"><span><b>Licenses & Attributions</b></span><i class="chev">›</i></button>
     <button class="set-row" id="setPrivacy"><span><b>Privacy</b></span><i class="chev">›</i></button>
@@ -434,6 +436,11 @@ function openSettings(view = 'main') {
     $('#setPlan', b).onclick = () => openPricing();
     $$('#setPreview button', b).forEach((x) => x.onclick = () => { setPlan(x.dataset.v); toast(`Previewing ${TIERS[x.dataset.v].name}`); openSettings(); });
     $('#setPlaces', b).onclick = openPlaces;
+    $('#setNotify', b).onchange = async (e) => {
+      if (e.target.checked && !gate('noAds', 'Weather alerts')) { e.target.checked = false; return; }
+      e.target.checked = await setNotify(e.target.checked);
+      if (e.target.checked) toast('Alerts are on for your places');
+    };
     $('#setAttrib', b).onclick = () => openSettings('attrib');
     $('#setPrivacy', b).onclick = () => openSettings('privacy');
     $('#setReset', b).onclick = () => { store.set('layers2', null); store.set('mapStyle', 'auto'); location.reload(); };
@@ -461,6 +468,7 @@ async function boot() {
   wireTools();
   initRoute(() => state.loc);
   initDashboard();
+  initNotify(() => state.favs, () => state.loc);
   ['#fcAd1', '#fcAd2', '#fcAd3'].forEach((id) => { $(id).innerHTML = adSlot('banner'); }); $('#fcAd4').innerHTML = adSlot('tall');
   $('#radarAd').innerHTML = adSlot('box');
   fillAds(document);

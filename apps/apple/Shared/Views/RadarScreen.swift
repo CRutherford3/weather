@@ -41,8 +41,13 @@ struct RadarScreen: View {
         .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
         .confirmationDialog(tappedSite.map { "\($0.id) · \($0.name)" } ?? "Radar", isPresented: Binding(get: { tappedSite != nil }, set: { if !$0 { tappedSite = nil } }), titleVisibility: .visible) {
             if let s = tappedSite {
-                Button("Reflectivity (rain and storms)") { var x = s; x.product = "N0B"; radar.setSite(x) }
-                Button("Velocity (wind toward / away)") { var x = s; x.product = "N0S"; radar.setSite(x) }
+                ForEach(RadarService.SiteProduct.allCases) { p in
+                    Button("\(p.title) (\(p.detail.lowercased()))") {
+                        var x = s; x.product = p.rawValue
+                        x.tilt = (radar.site?.id == s.id && p.hasTilts) ? radar.site?.tilt ?? 0 : 0
+                        radar.setSite(x)
+                    }
+                }
                 if radar.site != nil { Button("Back to Hi-Def Radar") { radar.setSite(nil) } }
                 Button("Cancel", role: .cancel) {}
             }
@@ -73,8 +78,22 @@ struct RadarScreen: View {
                 Menu {
                     if let s = radar.site {
                         Button("Back to Hi-Def Radar") { radar.setSite(nil) }
-                        Button(s.product == "N0B" ? "Show Velocity" : "Show Reflectivity") {
-                            var x = s; x.product = s.product == "N0B" ? "N0S" : "N0B"; radar.setSite(x)
+                        Menu("Product") {
+                            ForEach(RadarService.SiteProduct.allCases) { p in
+                                Button { var x = s; x.product = p.rawValue; if !p.hasTilts { x.tilt = 0 }; radar.setSite(x) } label: {
+                                    if s.kind == p { Label(p.title, systemImage: "checkmark") } else { Text(p.title) }
+                                }
+                            }
+                        }
+                        if s.kind.hasTilts {
+                            Menu("Tilt (beam angle)") {
+                                ForEach(0..<4, id: \.self) { t in
+                                    Button { var x = s; x.tilt = t; radar.setSite(x) } label: {
+                                        let name = RadarService.SiteProduct.tiltNames[t] + (t == 0 ? " (lowest)" : "")
+                                        if s.tilt == t { Label(name, systemImage: "checkmark") } else { Text(name) }
+                                    }
+                                }
+                            }
                         }
                         Divider()
                     }
@@ -107,7 +126,7 @@ struct RadarScreen: View {
     }
 
     /// Past 48 hours and future radar come with Pro or the Radar Pack.
-    private var proRadar: Bool { store.radarPack || store.effectivePlan >= .pro }
+    private var proRadar: Bool { store.hasDoppler }
 
     @ViewBuilder private var timeLabel: some View {
         if let t = radar.currentTime {
@@ -152,8 +171,10 @@ struct LayersSheet: View {
                         }
                     }
                 }
-                if !store.radarPack && store.effectivePlan < .pro {
-                    Section { Button { showPlans = true } label: { Label("Unlock every layer with the Pro Radar Pack", systemImage: "lock.open.fill") } }
+                if store.effectivePlan < .plus {
+                    Section { Button { showPlans = true } label: { Label("Unlock every layer with Plus", systemImage: "lock.open.fill") } }
+                } else if !store.hasDoppler {
+                    Section { Button { showPlans = true } label: { Label("Get Doppler radar with Pro or the Radar Pack", systemImage: "dot.radiowaves.left.and.right") } }
                 }
             }
             .formStyle(.grouped)   // scrollable list on Mac (the default Mac form style doesn't scroll)

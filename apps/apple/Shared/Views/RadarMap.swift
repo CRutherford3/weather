@@ -43,9 +43,9 @@ struct TileSource {
 
 /// Map layers the app can draw. Mirrors the website's layer list and plan levels.
 enum MapLayer: String, CaseIterable, Identifiable {
-    case radar, sites, satIR, satVis, satWV, satColor, lightning, rain, rain72
+    case radar, sites, satIR, satVis, satWV, satColor, lightning, rainRate, rain, rain72, echoTops
     case warnings, spc, mcd, lsr, hail
-    case fronts, temps, winds, aqi
+    case fronts, temps, winds, road, aqi
     case hurricanes, twoutlook, windprob, surge
     case snowdepth, snowprob
     case buoys, cams, waves, sst, charts
@@ -62,6 +62,9 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .satWV: return "Clouds: Water Vapor"
         case .satColor: return "Clouds: True Color"
         case .lightning: return "Lightning"
+        case .rainRate: return "Rain Rate (now)"
+        case .echoTops: return "Echo Tops (storm height)"
+        case .road: return "Road Weather (estimated)"
         case .rain: return "Rain Totals (24 hr)"
         case .rain72: return "Rain Totals (3 days)"
         case .warnings: return "Weather Alerts"
@@ -97,9 +100,9 @@ enum MapLayer: String, CaseIterable, Identifiable {
 
     var group: LayerGroup {
         switch self {
-        case .radar, .sites, .satIR, .satVis, .satWV, .satColor, .lightning, .rain, .rain72: return .radarSat
+        case .radar, .sites, .satIR, .satVis, .satWV, .satColor, .lightning, .rainRate, .rain, .rain72, .echoTops: return .radarSat
         case .warnings, .spc, .mcd, .lsr, .hail: return .severe
-        case .fronts, .temps, .winds, .aqi: return .conditions
+        case .fronts, .temps, .winds, .road, .aqi: return .conditions
         case .hurricanes, .twoutlook, .windprob, .surge: return .tropics
         case .snowdepth, .snowprob, .avalanche: return .snow
         case .buoys, .cams, .waves, .sst, .charts: return .marine
@@ -110,7 +113,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
     /// Plan needed (same levels as the website). The Radar Pack unlocks every layer.
     var tier: Plan {
         switch self {
-        case .lightning, .rain, .rain72, .hail, .temps, .winds, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation:
+        case .lightning, .rainRate, .echoTops, .road, .rain, .rain72, .hail, .temps, .winds, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation:
             return .plus
         case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages, .sites:
             return .pro
@@ -119,11 +122,14 @@ enum MapLayer: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Opened by the one-time Pro Radar Pack (Doppler tools only).
+    var inRadarPack: Bool { self == .sites }
+
     /// Only one satellite view at a time.
     var isSatellite: Bool { [.satIR, .satVis, .satWV, .satColor].contains(self) }
 
     /// Layers redrawn for whatever area is on screen.
-    var followsView: Bool { [.temps, .winds, .aqi, .waves, .aviation].contains(self) }
+    var followsView: Bool { [.temps, .winds, .road, .aqi, .waves, .aviation].contains(self) }
 
     /// Tile layers. Time-based URLs get a cache-busting stamp so they refresh.
     var tiles: TileSource? {
@@ -146,6 +152,12 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .lightning:
             return TileSource(template: "https://nowcoast.noaa.gov/geoserver/observations/lightning_detection/ows?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=ldn_lightning_strike_density&STYLES=&FORMAT=image/png&TRANSPARENT=true&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox}&_=\(b5)", nativeMaxZ: 20, opacity: 0.55, above: true)
         case .rain: return TileSource(template: "\(iem)/q2-p24h-900913/{z}/{x}/{y}.png?_=\(b10)", nativeMaxZ: 10, opacity: 0.7)
+        case .rainRate:
+            // MRMS precipitation rate, a new image every 2 minutes (named by its UTC time)
+            let t = Date(timeIntervalSince1970: ((now - 360) / 120).rounded(.down) * 120)
+            let f = DateFormatter(); f.dateFormat = "yyyyMMddHHmm"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
+            return TileSource(template: "https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/mrms::a2m-\(f.string(from: t))/{z}/{x}/{y}.png", nativeMaxZ: 10, opacity: 0.8)
+        case .echoTops: return TileSource(template: "\(iem)/nexrad-eet/{z}/{x}/{y}.png?_=\(b5)", nativeMaxZ: 10, opacity: 0.75)
         case .rain72: return TileSource(template: "\(iem)/q2-p72h-900913/{z}/{x}/{y}.png?_=\(b10)", nativeMaxZ: 10, opacity: 0.7)
         case .hurricanes: return TileSource(template: ags("tropical/rest/services/tropical/NHC_tropical_weather/MapServer", nil, b30), nativeMaxZ: 20, opacity: 0.9, above: true)
         case .twoutlook: return TileSource(template: ags("tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer", "1,2,3,33", b30), nativeMaxZ: 20, opacity: 0.85, above: true)
@@ -673,10 +685,10 @@ struct RadarMap: PlatformViewRepresentable {
             let on = map.overlays.contains { $0 === radarOverlay }
             if L.contains(.radar) {
                 if !on { map.addOverlay(radarOverlay, level: .aboveRoads) }
-                let key = parent.radar.frames.map { $0.template + ($0.tiles ?? "") }.joined() + (parent.radar.hiDef ? "#hd" : "")
+                let key = parent.radar.frames.map { $0.template + ($0.tiles ?? "") + ($0.image?.absoluteString ?? "") }.joined() + (parent.radar.hiDef ? "#hd" : "")
                 if key != frameKey {
                     frameKey = key
-                    let isSite = parent.radar.frames.first?.tiles != nil
+                    let isSite = parent.radar.frames.first.map { $0.tiles != nil || $0.image != nil } ?? false
                     // new mode, or switching to / from / between single radars: start fresh
                     if parent.radar.frames.count != frameCount || isSite || wasSite || parent.radar.hiDef != wasHiDef { frameImages = [:]; shownFrame = -1 }
                     wasHiDef = parent.radar.hiDef
@@ -771,7 +783,7 @@ struct RadarMap: PlatformViewRepresentable {
                     while next < min(3, order.count) {
                         let i = order[next]; next += 1
                         let f = frames[i]
-                        g.addTask { (i, await Coordinator.stitch(f.tiles ?? "", center: f.center ?? .init())) }
+                        g.addTask { (i, await Coordinator.siteImage(f)) }
                     }
                     for await (i, res) in g {
                         if Task.isCancelled { break }
@@ -785,11 +797,22 @@ struct RadarMap: PlatformViewRepresentable {
                         if next < order.count {
                             let j = order[next]; next += 1
                             let f = frames[j]
-                            g.addTask { (j, await Coordinator.stitch(f.tiles ?? "", center: f.center ?? .init())) }
+                            g.addTask { (j, await Coordinator.siteImage(f)) }
                         }
                     }
                 }
             }
+        }
+
+        /// A Doppler frame's picture: one ready-made image (tilts, dual-pol...) or stitched map tiles.
+        nonisolated static func siteImage(_ f: RadarService.Frame) async -> (CGImage, MKMapRect)? {
+            if let u = f.image, let b = f.bounds, b.count == 4 {
+                guard let img = await fetchImage(u) else { return nil }
+                let tl = MKMapPoint(CLLocationCoordinate2D(latitude: b[3], longitude: b[0]))
+                let br = MKMapPoint(CLLocationCoordinate2D(latitude: b[1], longitude: b[2]))
+                return (img, MKMapRect(x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y))
+            }
+            return await stitch(f.tiles ?? "", center: f.center ?? .init())
         }
 
         /// Downloads the zoom-8 tiles covering about 260 km around a radar and joins them into one image.
@@ -884,7 +907,7 @@ struct RadarMap: PlatformViewRepresentable {
         func loadRadarImages() {
             guard let map, parent.radar.layers.contains(.radar), !parent.radar.frames.isEmpty else { return }
             radarTask?.cancel()
-            if parent.radar.frames.first?.tiles != nil {   // one radar: fixed area, no need to reload after panning
+            if let f0 = parent.radar.frames.first, f0.tiles != nil || f0.image != nil {   // one radar: fixed area, no need to reload after panning
                 if frameImages.count < parent.radar.frames.count { loadSiteImages() }
                 return
             }
@@ -1144,6 +1167,18 @@ struct RadarMap: PlatformViewRepresentable {
             let grid = Self.grid(r, cols: 6, rows: 8)
             let lats = grid.map { String(format: "%.3f", $0.latitude) }.joined(separator: ",")
             let lons = grid.map { String(format: "%.3f", $0.longitude) }.joined(separator: ",")
+            if layer == .road {
+                guard let url = URL(string: "https://api.open-meteo.com/v1/forecast?hourly=temperature_2m,dew_point_2m,precipitation,snowfall,weather_code&past_hours=3&forecast_hours=1&timezone=GMT&latitude=\(lats)&longitude=\(lons)"),
+                      let j = await Self.json(url) else { return }
+                let list: [[String: Any]] = (j as? [[String: Any]]) ?? ((j as? [String: Any]).map { [$0] } ?? [])
+                var pts: [WxPoint] = []
+                for (i, item) in list.enumerated() where i < grid.count {
+                    guard let h = item["hourly"] as? [String: Any], let st = RoadWeather.state(h) else { continue }
+                    pts.append(WxPoint(grid[i], title: "", subtitle: "", color: st.color, size: 0, layer: .road, label: st.label, darkText: st == .snow))
+                }
+                put(.road, [], pts)
+                return
+            }
             let base: String
             switch layer {
             case .aqi: base = "https://air-quality-api.open-meteo.com/v1/air-quality?current=us_aqi"

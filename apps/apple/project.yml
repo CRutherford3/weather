@@ -20,6 +20,14 @@ targets:
     supportedDestinations: [iOS, macOS]
     sources:
       - path: Shared
+    dependencies:
+      - target: DopplerIQWidget   # Home Screen / desktop widgets, embedded in the app
+    # Extra Info.plist keys (merged with the generated ones): background refresh for weather alerts
+    info:
+      path: Support/Info.plist
+      properties:
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [io.dialcheck.weather.alerts]
     settings:
       base:
         # Permanent store ID. Holds no app name on purpose, so the name can change later.
@@ -37,6 +45,35 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # Mac App Store sandbox: network + location only
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
+        ENABLE_RESOURCE_ACCESS_LOCATION: YES
+        ENABLE_HARDENED_RUNTIME: YES
+
+  # Home Screen (iPhone, iPad) and desktop / Notification Center (Mac) widgets.
+  # Each widget can follow your location or show a city you type when editing the widget.
+  DopplerIQWidget:
+    type: app-extension
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: Widget
+    info:
+      path: Support/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: DopplerIQ
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        NSWidgetWantsLocation: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.dialcheck.weather.widget
+        PRODUCT_NAME: DopplerIQWidget
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: DopplerIQ
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Shows the weather where you are."
+        INFOPLIST_KEY_NSLocationUsageDescription: "Shows the weather where you are."
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
         ENABLE_APP_SANDBOX: YES
         ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
         ENABLE_RESOURCE_ACCESS_LOCATION: YES

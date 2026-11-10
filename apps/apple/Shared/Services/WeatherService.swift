@@ -91,39 +91,94 @@ enum RadarService {
         /// Single-radar (Doppler) frames: a {z}/{x}/{y} tile template drawn around the radar site.
         var tiles: String? = nil
         var center: CLLocationCoordinate2D? = nil
+        /// Or one ready-made image from /api/radar covering `bounds` = [west, south, east, north].
+        var image: URL? = nil
+        var bounds: [Double]? = nil
     }
 
-    /// One NEXRAD radar, in Reflectivity (N0B) or Velocity (N0S), like the website's Doppler mode.
+    /// Doppler products for one radar. Tilts 0-3 are the four lowest beam angles.
+    enum SiteProduct: String, CaseIterable, Identifiable {
+        case ref, vel, srv, cc, zdr, hhc, vil, eet
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .ref: return "Reflectivity"
+            case .vel: return "Velocity"
+            case .srv: return "Storm-Relative Velocity"
+            case .cc: return "Correlation Coefficient"
+            case .zdr: return "Differential Reflectivity"
+            case .hhc: return "Precipitation Type"
+            case .vil: return "VIL"
+            case .eet: return "Echo Tops"
+            }
+        }
+        var detail: String {
+            switch self {
+            case .ref: return "Rain and storms"
+            case .vel: return "Wind toward (green) or away (red)"
+            case .srv: return "Rotation, with storm motion removed"
+            case .cc: return "Low values inside a storm: debris or hail"
+            case .zdr: return "Drop shape: big drops vs hail"
+            case .hhc: return "Rain, snow, hail, sleet"
+            case .vil: return "Hail potential"
+            case .eet: return "Storm top height"
+            }
+        }
+        var hasTilts: Bool { [.ref, .vel, .cc, .zdr, .hhc].contains(self) }
+        static let tiltNames = ["0.5°", "0.9°", "1.3°", "1.8°"]
+    }
+
+    /// One NEXRAD radar and the product shown from it.
     struct Site: Equatable {
         let id: String       // KMLB
         let name: String
         let lat: Double
         let lon: Double
-        var product = "N0B"
-        var code: String { String(id.dropFirst()) }   // IEM uses MLB
-        var productName: String { product == "N0S" ? "Velocity" : "Reflectivity" }
-        static func == (a: Site, b: Site) -> Bool { a.id == b.id && a.product == b.product }
+        /// "N0B" / "N0S" (older saved values) or a SiteProduct raw value.
+        var product = "ref"
+        var tilt = 0
+        var code: String { String(id.dropFirst()) }   // IEM and NOAA's archive use MLB
+        var kind: SiteProduct { product == "N0B" ? .ref : product == "N0S" ? .srv : SiteProduct(rawValue: product) ?? .ref }
+        var productName: String { kind.title + (kind.hasTilts ? " " + SiteProduct.tiltNames[min(3, max(0, tilt))] : "") }
+        static func == (a: Site, b: Site) -> Bool { a.id == b.id && a.kind == b.kind && a.tilt == b.tilt }
     }
 
     /// The last hour of scans from one radar.
     static func siteFrames(_ s: Site) async -> [Frame] {
+        let k = s.kind
+        if k == .ref && s.tilt == 0 { return await ridgeFrames(s, "N0B") }
+        if k == .srv { return await ridgeFrames(s, "N0S") }
+        // Tilts, velocity, dual-pol, VIL, echo tops: decoded from NOAA Level III by our API
+        var c = URLComponents(url: AppConfig.apiBase.appendingPathComponent("api/radar"), resolvingAgainstBaseURL: false)!
+        c.queryItems = [.init(name: "site", value: s.code), .init(name: "family", value: k.rawValue), .init(name: "tilt", value: String(k.hasTilts ? s.tilt : 0)),
+                        .init(name: "lat", value: String(format: "%.3f", s.lat)), .init(name: "lon", value: String(format: "%.3f", s.lon))]
+        struct Res: Decodable { struct F: Decodable { let t: Double; let url: String }; let bounds: [Double]?; let frames: [F]? }
+        guard let url = c.url, let data = try? await URLSession.shared.data(from: url).0,
+              let res = try? JSONDecoder().decode(Res.self, from: data), let b = res.bounds, b.count == 4 else { return [] }
+        return (res.frames ?? []).enumerated().compactMap { i, f in
+            guard let u = URL(string: f.url) else { return nil }
+            return Frame(id: i, time: Date(timeIntervalSince1970: f.t / 1000), template: "", image: u, bounds: b)
+        }
+    }
+
+    private static func ridgeFrames(_ s: Site, _ product: String) async -> [Frame] {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm'Z'"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
         let now = Date()
         let tile = "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::"
         let center = CLLocationCoordinate2D(latitude: s.lat, longitude: s.lon)
         var out: [Frame] = []
-        if let url = URL(string: "https://mesonet.agron.iastate.edu/json/radar.py?operation=list&radar=\(s.code)&product=\(s.product)&start=\(f.string(from: now.addingTimeInterval(-3600)))&end=\(f.string(from: now))"),
+        if let url = URL(string: "https://mesonet.agron.iastate.edu/json/radar.py?operation=list&radar=\(s.code)&product=\(product)&start=\(f.string(from: now.addingTimeInterval(-3600)))&end=\(f.string(from: now))"),
            let data = try? await URLSession.shared.data(from: url).0,
            let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let scans = j["scans"] as? [[String: Any]] {
             for sc in scans.suffix(12) {
                 guard let ts = sc["ts"] as? String, let t = iso.date(from: ts) ?? f.date(from: ts) else { continue }
                 let stamp = ts.filter(\.isNumber).prefix(12)
-                out.append(Frame(id: out.count, time: t, template: "", tiles: "\(tile)\(s.code)-\(s.product)-\(stamp)/{z}/{x}/{y}.png", center: center))
+                out.append(Frame(id: out.count, time: t, template: "", tiles: "\(tile)\(s.code)-\(product)-\(stamp)/{z}/{x}/{y}.png", center: center))
             }
         }
         if out.isEmpty {   // no scan list: show the latest image
-            out.append(Frame(id: 0, time: now, template: "", tiles: "\(tile)\(s.code)-\(s.product)-0/{z}/{x}/{y}.png?_=\(Int(now.timeIntervalSince1970 / 120))", center: center))
+            out.append(Frame(id: 0, time: now, template: "", tiles: "\(tile)\(s.code)-\(product)-0/{z}/{x}/{y}.png?_=\(Int(now.timeIntervalSince1970 / 120))", center: center))
         }
         return out
     }
