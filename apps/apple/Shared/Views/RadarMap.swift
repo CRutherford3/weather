@@ -1,11 +1,14 @@
 import SwiftUI
 import MapKit
 import ImageIO
+import QuartzCore
 
 #if os(macOS)
 typealias PColor = NSColor
+typealias PImage = NSImage
 #else
 typealias PColor = UIColor
+typealias PImage = UIImage
 #endif
 
 extension PColor {
@@ -336,6 +339,12 @@ final class WxPoint: NSObject, MKAnnotation {
     }
 }
 
+/// A lightning flash that blooms and fades on the map (MyRadar style), then removes itself.
+final class FlashAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    init(_ c: CLLocationCoordinate2D) { coordinate = c }
+}
+
 // MARK: - Radar image overlay
 
 /// The radar is drawn as one image per frame covering the area on screen (like most radar apps), so
@@ -526,6 +535,8 @@ struct RadarMap: PlatformViewRepresentable {
         // lightning strikes from the website (empty while the website is private)
         private var strikes: [MKPointAnnotation] = []
         private var strikesTimer: Timer?
+        private var lastStrikeT: Double = 0
+        private var flashGen = 0   // bumps when lightning is turned off, cancelling scheduled flashes
 
         init(_ p: RadarMap) { parent = p }
 
@@ -607,6 +618,8 @@ struct RadarMap: PlatformViewRepresentable {
                 strikesTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in Task { await self?.loadStrikes() } }
             } else if !L.contains(.lightning), let t = strikesTimer {
                 t.invalidate(); strikesTimer = nil; map.removeAnnotations(strikes); strikes = []
+                flashGen += 1; lastStrikeT = 0
+                map.removeAnnotations(map.annotations.filter { $0 is FlashAnnotation })
             }
         }
 
@@ -1040,6 +1053,29 @@ struct RadarMap: PlatformViewRepresentable {
                 return p
             }
             map.addAnnotations(strikes)
+            scheduleFlashes(r.f, now: now)
+        }
+
+        /// Replays new strikes as flashes spread over the next minute, so the map looks live between updates.
+        /// The first time, the last two minutes of strikes are replayed.
+        @MainActor private func scheduleFlashes(_ f: [[Double]], now: Double) {
+            guard let map else { return }
+            let since = lastStrikeT > 0 ? lastStrikeT : now - 120_000
+            let fresh = f.filter { $0.count >= 3 && $0[2] > since }
+            lastStrikeT = max(lastStrikeT, f.compactMap { $0.count >= 3 ? $0[2] : nil }.max() ?? lastStrikeT)
+            let view = map.visibleMapRect
+            var shown = fresh.filter { view.contains(MKMapPoint(CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]))) }
+            if shown.count > 150 { shown = Array(shown.shuffled().prefix(150)) }
+            let gen = flashGen
+            for s in shown {
+                let c = CLLocationCoordinate2D(latitude: s[1], longitude: s[0])
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 0..<58)) { [weak self] in
+                    guard let self, self.flashGen == gen, let map = self.map else { return }
+                    let a = FlashAnnotation(c)
+                    map.addAnnotation(a)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak map] in map?.removeAnnotation(a) }
+                }
+            }
         }
 
         // MARK: delegate
@@ -1072,6 +1108,29 @@ struct RadarMap: PlatformViewRepresentable {
         }
 
         func mapView(_ m: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is FlashAnnotation {
+                let v = m.dequeueReusableAnnotationView(withIdentifier: "flash") ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "flash")
+                v.annotation = annotation
+                v.image = Self.glow
+                v.canShowCallout = false
+                v.isEnabled = false
+                #if os(macOS)
+                v.wantsLayer = true
+                let layer = v.layer
+                #else
+                let layer: CALayer? = v.layer
+                #endif
+                // bloom quickly, then fade out
+                let scale = CAKeyframeAnimation(keyPath: "transform.scale")
+                scale.values = [0.2, 1.15, 1.0]; scale.keyTimes = [0, 0.25, 1]
+                let fade = CAKeyframeAnimation(keyPath: "opacity")
+                fade.values = [0, 1, 0.9, 0]; fade.keyTimes = [0, 0.12, 0.35, 1]
+                let g = CAAnimationGroup()
+                g.animations = [scale, fade]; g.duration = 1.1; g.isRemovedOnCompletion = false; g.fillMode = .forwards
+                layer?.removeAllAnimations()
+                layer?.add(g, forKey: "flash")
+                return v
+            }
             if let w = annotation as? WxPoint {
                 let id = w.label == nil ? "wxpoint" : "wxlabel"
                 let v = m.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: w, reuseIdentifier: id)
@@ -1116,6 +1175,26 @@ struct RadarMap: PlatformViewRepresentable {
         }
 
         // MARK: drawing helpers
+        /// White bloom with a soft blue-white edge, like a lightning flash lighting up clouds.
+        static let glow: PImage = {
+            let size: CGFloat = 64
+            let colors = [CGColor(red: 1, green: 1, blue: 1, alpha: 1), CGColor(red: 0.85, green: 0.9, blue: 1, alpha: 0.75),
+                          CGColor(red: 0.7, green: 0.8, blue: 1, alpha: 0.25), CGColor(red: 0.7, green: 0.8, blue: 1, alpha: 0)] as CFArray
+            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.18, 0.55, 1])!
+            let draw: (CGContext) -> Void = { ctx in
+                let c = CGPoint(x: size / 2, y: size / 2)
+                ctx.drawRadialGradient(grad, startCenter: c, startRadius: 0, endCenter: c, endRadius: size / 2, options: [])
+            }
+            #if os(macOS)
+            return NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+                if let ctx = NSGraphicsContext.current?.cgContext { draw(ctx) }
+                return true
+            }
+            #else
+            return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { draw($0.cgContext) }
+            #endif
+        }()
+
         #if os(macOS)
         static func symbol(_ name: String, color: NSColor, size: CGFloat) -> NSImage? {
             let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .bold).applying(NSImage.SymbolConfiguration(paletteColors: [color]))

@@ -319,18 +319,38 @@ ADD.lightning = async () => {
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 1.6, 8, 3.5], 'circle-color': ['interpolate', ['linear'], ['get', 'age'], 5, '#fb923c', 15, '#ef4444', 30, '#7f1d1d'], 'circle-opacity': ['interpolate', ['linear'], ['get', 'age'], 5, 0.95, 30, 0.35] } });
   map.addLayer({ id: 'strikes-new', type: 'symbol', source: 'strikes', filter: ['<', ['get', 'age'], 5],
     layout: { 'icon-image': 'bolt', 'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.55, 8, 1], 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
-  let alive = true;
+  let alive = true, lastT = 0;
+  const flashes = new Set(), timers = new Set();
+  // MyRadar-style flashes: new strikes replay as white blooms spread over the next minute
+  const flash = (lon, lat) => {
+    const el = document.createElement('div'); el.innerHTML = '<div class="ltg-flash"></div>';
+    const m = new ml.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+    flashes.add(m);
+    setTimeout(() => { m.remove(); flashes.delete(m); }, 1200);
+  };
+  const schedule = (list, now) => {
+    const since = lastT || now - 120e3;
+    lastT = Math.max(lastT, ...list.map((s) => s[2]));
+    const b = map.getBounds();
+    let fresh = list.filter(([lon, lat, t]) => t > since && b.contains([lon, lat]));
+    if (fresh.length > 150) fresh = fresh.sort(() => Math.random() - 0.5).slice(0, 150);
+    for (const [lon, lat] of fresh) {
+      const id = setTimeout(() => { timers.delete(id); if (alive) flash(lon, lat); }, Math.random() * 58e3);
+      timers.add(id);
+    }
+  };
   const load = async () => {
     try {
       const j = await getData('/api/lightning', { noProxy: true, timeout: 30000 });
       if (!alive || !map.getSource('strikes')) return;
       const now = Date.now();
       map.getSource('strikes').setData({ type: 'FeatureCollection', features: j.f.map(([lon, lat, t]) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: { age: (now - t) / 60e3 } })) });
+      schedule(j.f, now);
     } catch (e) { console.warn('lightning strikes', e); }
   };
   load();
   const timer = setInterval(load, 60e3);
-  return { remove: () => { alive = false; clearInterval(timer); dens.remove(); rm(['strikes-new', 'strikes-old'], ['strikes']); } };
+  return { remove: () => { alive = false; clearInterval(timer); timers.forEach(clearTimeout); flashes.forEach((m) => m.remove()); dens.remove(); rm(['strikes-new', 'strikes-old'], ['strikes']); } };
 };
 ADD.rain = async () => {
   const layer = { '1h': 'q2-n1p-900913', '24h': 'q2-p24h-900913', '72h': 'q2-p72h-900913' }[S.rain] || 'q2-p24h-900913';
