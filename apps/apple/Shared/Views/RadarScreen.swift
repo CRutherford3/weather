@@ -161,7 +161,7 @@ struct LayersSheet: View {
             .sheet(isPresented: $showPlans) { PlansView().environmentObject(store) }
         }
         #if os(macOS)
-        .frame(minWidth: 380, minHeight: 420)
+        .frame(width: 480, height: 640)   // fixed size so the layer list scrolls on Mac
         #endif
     }
 }

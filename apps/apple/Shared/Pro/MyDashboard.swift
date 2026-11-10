@@ -641,7 +641,7 @@ struct DashEditor: View {
             .sheet(isPresented: $showAdd) { WidgetCatalog(dash: dash).environmentObject(store) }
         }
         #if os(macOS)
-        .frame(minWidth: 460, minHeight: 520)
+        .frame(width: 480, height: 620)
         #endif
     }
 }
@@ -694,7 +694,7 @@ struct WidgetCatalog: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
         #if os(macOS)
-        .frame(minWidth: 460, minHeight: 560)
+        .frame(width: 480, height: 640)
         #endif
     }
 

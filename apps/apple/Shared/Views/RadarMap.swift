@@ -361,52 +361,53 @@ final class RadarImageRenderer: MKOverlayRenderer {
     private let lock = NSLock()
     private var image: CGImage?
     private var imageRect = MKMapRect.null
+    // previous frame, faded out while the new one fades in (smooth loop like MyRadar)
+    private var prev: CGImage?
+    private var prevRect = MKMapRect.null
+    private var fade: CGFloat = 1
+    private var fadeTimer: Timer?
 
     func show(_ img: CGImage, _ r: MKMapRect) {
-        lock.lock(); image = img; imageRect = r; lock.unlock()
+        lock.lock()
+        prev = image; prevRect = imageRect
+        image = img; imageRect = r
+        fade = prev == nil ? 1 : 0
+        lock.unlock()
+        fadeTimer?.invalidate()
+        if fade < 1 {
+            let start = Date()
+            fadeTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] t in
+                guard let self else { t.invalidate(); return }
+                let f = min(1, CGFloat(Date().timeIntervalSince(start) / 0.28))
+                self.lock.lock(); self.fade = f; if f >= 1 { self.prev = nil }; self.lock.unlock()
+                self.setNeedsDisplay()
+                if f >= 1 { t.invalidate() }
+            }
+        }
         setNeedsDisplay()
     }
-    func clear() { lock.lock(); image = nil; lock.unlock(); setNeedsDisplay() }
+    func clear() { lock.lock(); image = nil; prev = nil; lock.unlock(); setNeedsDisplay() }
 
     override func canDraw(_ mapRect: MKMapRect, zoomScale: MKZoomScale) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return image != nil && mapRect.intersects(imageRect)
+        return (image != nil && mapRect.intersects(imageRect)) || (prev != nil && mapRect.intersects(prevRect))
     }
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
-        lock.lock(); let img = image, r0 = imageRect; lock.unlock()
-        guard let img else { return }
-        let r = rect(for: r0)
+        lock.lock(); let img = image, r0 = imageRect, old = prev, r1 = prevRect, f = fade; lock.unlock()
         ctx.interpolationQuality = .high   // smooth the radar pixels like MyRadar
+        if let old, f < 1 { put(old, r1, alpha: 1 - f, ctx) }
+        if let img { put(img, r0, alpha: f, ctx) }
+    }
+
+    private func put(_ img: CGImage, _ m: MKMapRect, alpha: CGFloat, _ ctx: CGContext) {
+        let r = rect(for: m)
         ctx.saveGState()
+        ctx.setAlpha(alpha)
         ctx.translateBy(x: r.minX, y: r.maxY)
         ctx.scaleBy(x: 1, y: -1)
         ctx.draw(img, in: CGRect(origin: .zero, size: r.size))
         ctx.restoreGState()
-    }
-}
-
-/// Map background. Auto picks Dark or Light from the app's appearance.
-enum Basemap: String, CaseIterable, Identifiable {
-    case auto, dark, light, apple, satellite
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .auto: return "Auto"
-        case .dark: return "Dark"
-        case .light: return "Light"
-        case .apple: return "Apple"
-        case .satellite: return "Satellite"
-        }
-    }
-    private static let esri = "https://services.arcgisonline.com/ArcGIS/rest/services"
-    /// Black-and-gray (or light gray) base with the place names drawn above the radar, like MyRadar.
-    var tiles: (base: String, labels: String)? {
-        switch self {
-        case .dark: return ("\(Self.esri)/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
-        case .light: return ("\(Self.esri)/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
-        default: return nil
-        }
     }
 }
 
@@ -790,25 +791,51 @@ struct RadarMap: PlatformViewRepresentable {
 
         private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-        /// Hi-Def look: drop the light-blue returns (about 5 to 15 dBZ: drizzle, clutter and speckle, which
-        /// MyRadar hides too), then soften the edges so storms look smooth instead of pixelated.
+        /// Hi-Def look, as close to MyRadar as we can get:
+        ///  1. drop the light-blue returns (about 5 to 15 dBZ: drizzle, clutter, speckle)
+        ///  2. remove leftover isolated specks (pixels with almost no neighbours)
+        ///  3. blur colours and edges, then sharpen the edge back up, so storms become smooth rounded
+        ///     shapes with soft colour blending instead of pixel blocks.
         nonisolated static func hiDef(_ img: CGImage) -> CGImage? {
             let w = img.width, h = img.height
-            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+            guard w > 4, h > 4,
+                  let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                       space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
                   let data = ctx.data else { return nil }
             ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
             let p = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
-            var i = 0
-            let n = w * h * 4
-            while i < n {
-                if p[i + 3] > 0 && p[i] < 80 && p[i + 2] > 140 { p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0 }
-                i += 4
+            let n = w * h
+            // 1. light blue out
+            for k in 0..<n {
+                let i = k * 4
+                if p[i + 3] > 0 && p[i] < 90 && p[i + 2] > 130 && Int(p[i + 2]) > Int(p[i + 1]) - 40 {
+                    p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0
+                }
+            }
+            // 2. despeckle: clear pixels with fewer than 3 filled neighbours (two passes)
+            var filled = [UInt8](repeating: 0, count: n)
+            for _ in 0..<2 {
+                for k in 0..<n { filled[k] = p[k * 4 + 3] > 0 ? 1 : 0 }
+                for y in 1..<(h - 1) {
+                    let row = y * w
+                    for x in 1..<(w - 1) {
+                        let k = row + x
+                        guard filled[k] == 1 else { continue }
+                        let c = Int(filled[k - w - 1]) + Int(filled[k - w]) + Int(filled[k - w + 1]) + Int(filled[k - 1])
+                            + Int(filled[k + 1]) + Int(filled[k + w - 1]) + Int(filled[k + w]) + Int(filled[k + w + 1])
+                        if c < 3 { let i = k * 4; p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0 }
+                    }
+                }
             }
             guard let cleaned = ctx.makeImage() else { return nil }
+            // 3. smooth: blur, then firm up the alpha so edges are smooth curves rather than a haze
             let rect = CGRect(x: 0, y: 0, width: w, height: h)
-            let blurred = CIImage(cgImage: cleaned).clampedToExtent().applyingGaussianBlur(sigma: 1.1).cropped(to: rect)
-            return ciContext.createCGImage(blurred, from: rect)
+            let blurred = CIImage(cgImage: cleaned).clampedToExtent().applyingGaussianBlur(sigma: 2.6)
+            let firmed = blurred.applyingFilter("CIColorMatrix", parameters: [
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1.9),
+                "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: -0.32),
+            ]).cropped(to: rect)
+            return ciContext.createCGImage(firmed, from: rect)
         }
 
         nonisolated static func fetchImage(_ url: URL?) async -> CGImage? {

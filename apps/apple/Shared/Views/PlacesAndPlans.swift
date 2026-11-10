@@ -37,7 +37,7 @@ struct SearchView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
         #if os(macOS)
-        .frame(minWidth: 420, minHeight: 480)
+        .frame(width: 440, height: 540)
         #endif
     }
 }
@@ -70,7 +70,7 @@ struct PlansView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
         #if os(macOS)
-        .frame(minWidth: 460, minHeight: 600)
+        .frame(width: 500, height: 700)
         #endif
     }
 
