@@ -469,7 +469,7 @@ async function boot() {
     document.body.classList.add('free-testing');
     const chip = document.createElement('button');
     chip.className = 'test-chip'; chip.type = 'button';
-    chip.innerHTML = '<span class="tc-long">All features free while testing</span><span class="tc-short">Free while testing</span>';
+    chip.innerHTML = '<span class="tc-long">All features free while testing</span><span class="tc-short">Free while testing</span><span class="tc-tiny">Free</span>';
     chip.onclick = openTestingNote;
     document.querySelector('.topbar .brand')?.after(chip);
   }
