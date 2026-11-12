@@ -93,11 +93,16 @@ const clickers = []; // [layerId, handler]
 
 // ================= init =================
 // ================= Hi-Def radar =================
-// Same recipe as the app: drop the light-blue returns (drizzle, clutter, speckle), clear isolated specks,
+// Same recipe as the app: drop the light-blue and gray returns (drizzle, clear-air clutter, speckle), clear isolated specks,
 // then blur and firm up the edges so storms become smooth rounded shapes instead of pixel blocks.
 function hiDefPixels(d, w, h) {
   const n = w * h;
-  for (let k = 0; k < n; k++) { const i = k * 4; if (d[i + 3] > 0 && d[i] < 90 && d[i + 2] > 130 && d[i + 2] > d[i + 1] - 40) d[i + 3] = 0; }
+  for (let k = 0; k < n; k++) {
+    const i = k * 4; if (!d[i + 3]) continue;
+    const r = d[i], g = d[i + 1], b = d[i + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    // light blue (about 5 to 15 dBZ) and the gray-blue clear-air returns (below about 5 dBZ)
+    if ((r < 90 && b > 130 && b > g - 40) || (mx - mn < 80 && mx < 235)) d[i + 3] = 0;
+  }
   const filled = new Uint8Array(n);
   for (let pass = 0; pass < 2; pass++) {
     for (let k = 0; k < n; k++) filled[k] = d[k * 4 + 3] > 0 ? 1 : 0;
