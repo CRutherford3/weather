@@ -16,8 +16,11 @@ export const RADAR_PACK = { name: 'Pro Radar Pack', price: '$6.99', blurb: 'One-
 export const TRIAL_DAYS = 7; // free trial on yearly plans (App Store introductory offer)
 export const PAGE_LIMIT = { free: 1, plus: 5, pro: 99 };
 
+// Testing period: every feature is unlocked for everyone. Plan badges still show so people see what will be paid.
+// Set to false when accounts and checkout go live.
+export const FREE_WHILE_TESTING = true;
 // Test site: pro.weather.dialcheck.io always runs as Pro
-const FORCED = /^pro\./.test(location.hostname) ? 'pro' : null;
+const FORCED = FREE_WHILE_TESTING || /^pro\./.test(location.hostname) ? 'pro' : null;
 const PACK_LAYERS = new Set(['sites']);
 export const hasRadarPack = () => !!store.get('radarPack', false);
 export const plan = () => FORCED ||  (RANK[store.get('plan', 'free')] != null ? store.get('plan', 'free') : 'free');
@@ -35,6 +38,7 @@ export function setPlan(p) {
 
 // Pricing sheet. reason = what the user tried to open.
 export function openPricing(reason) {
+  if (FREE_WHILE_TESTING) { openTestingNote(); return; }
   const cur = plan();
   let yearly = store.get('billYearly', true);
   const save = (t) => { const m = parseFloat(t.price.slice(1)) * 12, y = parseFloat(t.year.slice(1)); return Math.round((1 - y / m) * 100); };
@@ -64,6 +68,13 @@ export function openPricing(reason) {
       toast('Checkout is not connected yet. Use Settings → Preview plan to try it.');
     });
   });
+}
+
+// Shown from the "free while testing" chip (and anywhere pricing would open)
+export function openTestingNote() {
+  openSheet('Free while we test', `<div class="set-pad"><p><b>Every DopplerIQ feature is free while we test.</b></p>
+    <p class="muted">That includes Pro: Doppler radar at any site, marine and offshore, route weather, the hurricane tracker, every map layer and unlimited dashboard pages, with no ads.</p>
+    <p class="muted">The <span class="tier-badge t-plus">PLUS</span> and <span class="tier-badge t-pro">PRO</span> badges show what will be part of a paid plan later. We'll give plenty of notice before anything changes.</p></div>`);
 }
 
 // Gate helper: returns true if allowed, otherwise opens pricing.

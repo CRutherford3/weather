@@ -694,3 +694,10 @@ body[data-plan="pro"] .tier-badge, body[data-plan="plus"] .tier-badge.t-plus { d
 .style-thumb { background-size: cover; background-position: center; }
 .style-thumb.proDark { background: linear-gradient(135deg, #050505, #1c1c1c); }
 .style-thumb.proLight { background: linear-gradient(135deg, #ffffff, #e5e7eb); }
+
+/* Free while testing: keep plan badges visible, and show the chip in the top bar */
+body.free-testing .tier-badge { display: inline-block !important; }
+.test-chip { flex: none; border: 1px solid color-mix(in srgb, #10b981 55%, transparent); background: color-mix(in srgb, #10b981 16%, transparent); color: #34d399; font: 700 12px Inter, sans-serif; padding: 5px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+[data-theme="light"] .test-chip { color: #047857; }
+.test-chip .tc-short { display: none; }
+@media (max-width: 1180px) { .test-chip .tc-long { display: none; } .test-chip .tc-short { display: inline; } }

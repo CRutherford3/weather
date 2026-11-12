@@ -4,7 +4,7 @@ import { geocode, reverseGeocode, loadPoint, loadModels, loadDiscussion, placesN
 import * as F from './forecast.js';
 import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
-import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge } from './plan.js';
+import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge, FREE_WHILE_TESTING, openTestingNote } from './plan.js';
 import { initRoute, openRoute } from './route.js';
 import { loadMarine, marineHTML } from './marine.js';
 import { getData } from './util.js';
@@ -416,8 +416,8 @@ function openSettings(view = 'main') {
     <div class="sheet-sub">Appearance</div>
     <div class="set-pad"><div class="seg big" id="setTheme">${['auto', 'dark', 'light'].map((t) => `<button data-v="${t}" class="${state.theme === t ? 'on' : ''}">${t === 'auto' ? 'Auto' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
     <div class="sheet-sub">Your plan</div>
-    <button class="set-row" id="setPlan"><span><b>DopplerIQ ${TIERS[plan()].name}</b><small>${plan() === 'free' ? 'Go ad-free and unlock every layer' : 'Thanks for supporting DopplerIQ'}</small></span><i class="chev">›</i></button>
-    <div class="set-pad"><small class="muted">Preview plan (testing only, until checkout is connected)</small><div class="seg" id="setPreview">${['free', 'plus', 'pro'].map((t) => `<button data-v="${t}" class="${plan() === t ? 'on' : ''}">${TIERS[t].name}</button>`).join('')}</div></div>
+    <button class="set-row" id="setPlan"><span><b>DopplerIQ ${FREE_WHILE_TESTING ? 'Pro (free while testing)' : TIERS[plan()].name}</b><small>${FREE_WHILE_TESTING ? 'Every feature is unlocked while we test' : plan() === 'free' ? 'Go ad-free and unlock every layer' : 'Thanks for supporting DopplerIQ'}</small></span><i class="chev">›</i></button>
+    ${FREE_WHILE_TESTING ? '' : `<div class="set-pad"><small class="muted">Preview plan (testing only, until checkout is connected)</small><div class="seg" id="setPreview">${['free', 'plus', 'pro'].map((t) => `<button data-v="${t}" class="${plan() === t ? 'on' : ''}">${TIERS[t].name}</button>`).join('')}</div></div>`}
     <div class="sheet-sub">Location</div>
     <div class="lrow"><div class="lrow-main"><span>Follow My Location</span></div><label class="tg"><input type="checkbox" id="setFollow" ${watchId != null ? 'checked' : ''}><span></span></label></div>
     <p class="set-note">Keep the forecast and map centered on you as you move.</p>
@@ -465,6 +465,14 @@ async function boot() {
   Map.initMap('map', start, effTheme, { onPick: pickPoint, onSavePlace: savePlace, getPlaces: () => state.favs, onCenter });
   applyTheme();
   document.body.dataset.plan = plan();
+  if (FREE_WHILE_TESTING) {
+    document.body.classList.add('free-testing');
+    const chip = document.createElement('button');
+    chip.className = 'test-chip'; chip.type = 'button';
+    chip.innerHTML = '<span class="tc-long">All features free while testing</span><span class="tc-short">Free while testing</span>';
+    chip.onclick = openTestingNote;
+    document.querySelector('.topbar .brand')?.after(chip);
+  }
   wireTools();
   initRoute(() => state.loc);
   initDashboard();
