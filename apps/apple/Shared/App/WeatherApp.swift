@@ -35,11 +35,11 @@ struct WeatherApp: App {
 
         #if os(macOS)
         Settings {
-            SettingsView()
+            NavigationStack { SettingsView() }
                 .environmentObject(state)
                 .environmentObject(store)
                 .preferredColorScheme(state.appearance.scheme)
-                .frame(width: 460, height: 480)
+                .frame(width: 480, height: 640)
         }
         #endif
     }

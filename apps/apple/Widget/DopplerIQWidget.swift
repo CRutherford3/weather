@@ -32,10 +32,15 @@ struct WxEntry: TimelineEntry {
     var days: [(date: Date, hi: Double, lo: Double, code: Int, rain: Int)] = []
     var alert: String?
     var message: String?
+    /// Warmest and coolest hours in the next 24 (for the Temperature gauge).
+    var peak: (time: Date, temp: Double)?
+    var trough: (time: Date, temp: Double)?
+    var locationBased = true
 
     static let sample: WxEntry = {
         var e = WxEntry(date: .now, place: "Atlanta", temp: 72, code: 2, hi: 78, lo: 61, feels: 74, rainChance: 20)
         for i in 1...6 { e.hours.append((time: Date.now.addingTimeInterval(Double(i) * 3600), temp: 72 + Double(i % 3), code: [2, 3, 61][i % 3], isDay: true)) }
+        e.peak = (time: Date.now.addingTimeInterval(3 * 3600), temp: 92); e.trough = (time: Date.now.addingTimeInterval(18 * 3600), temp: 72); e.temp = 82
         for i in 0..<5 { e.days.append((date: Date.now.addingTimeInterval(Double(i) * 86400), hi: 78 - Double(i), lo: 60 + Double(i % 2), code: [1, 2, 61, 95, 0][i], rain: [10, 20, 60, 70, 0][i])) }
         return e
     }()
@@ -57,6 +62,7 @@ enum WidgetWeather {
             return WxEntry(date: .now, message: "Open DopplerIQ once to share your location, or edit the widget to pick a city.")
         }
         var e = WxEntry(date: .now, place: name)
+        e.locationBased = typed.isEmpty
         let unit = fahrenheit ? "&temperature_unit=fahrenheit" : ""
         let url = URL(string: String(format: "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f", lat, lon)
             + "&current=temperature_2m,apparent_temperature,weather_code,is_day&hourly=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&forecast_days=6&timezone=auto&timeformat=unixtime" + unit)!
@@ -71,6 +77,9 @@ enum WidgetWeather {
                 for i in start..<min(start + 6, t.count) where i < tp.count {
                     e.hours.append((time: Date(timeIntervalSince1970: t[i]), temp: tp[i], code: Int(cd[safe: i] ?? 0), isDay: (dy[safe: i] ?? 1) == 1))
                 }
+                let next = Array(start..<min(start + 24, t.count, tp.count))
+                if let hi = next.max(by: { tp[$0] < tp[$1] }) { e.peak = (time: Date(timeIntervalSince1970: t[hi]), temp: tp[hi]) }
+                if let lo = next.min(by: { tp[$0] < tp[$1] }) { e.trough = (time: Date(timeIntervalSince1970: t[lo]), temp: tp[lo]) }
             }
             if let d = j["daily"] as? [String: Any] {
                 let t = nums(d["time"]), hi = nums(d["temperature_2m_max"]), lo = nums(d["temperature_2m_min"]), cd = nums(d["weather_code"]), pr = nums(d["precipitation_probability_max"])
@@ -78,6 +87,12 @@ enum WidgetWeather {
                 for i in 0..<min(t.count, hi.count, lo.count) {
                     e.days.append((date: Date(timeIntervalSince1970: t[i]), hi: hi[i], lo: lo[i], code: Int(cd[safe: i] ?? 0), rain: Int(pr[safe: i] ?? 0)))
                 }
+            }
+            // The hourly list starts at the next full hour, so the reading right now isn't in it.
+            // Count it, otherwise the "high" pill can show a lower number than the current temperature.
+            if let now = e.temp {
+                if e.peak == nil || now >= e.peak!.temp { e.peak = (time: .now, temp: now) }
+                if e.trough == nil || now <= e.trough!.temp { e.trough = (time: .now, temp: now) }
             }
         } else {
             e.message = "Weather is unavailable right now."
@@ -170,6 +185,11 @@ struct WxProvider: AppIntentTimelineProvider {
 
 // MARK: - Views
 
+/// Where a tap on a widget goes. The app opens its Dashboard for this link.
+enum WidgetLink {
+    static let dashboard = URL(string: "doppleriq://dashboard")!
+}
+
 private let deg: (Double?) -> String = { $0.map { "\(Int($0.rounded()))°" } ?? "--" }
 
 struct WxWidgetView: View {
@@ -197,6 +217,7 @@ struct WxWidgetView: View {
                 }
             }
         }
+        .widgetURL(WidgetLink.dashboard)
         .containerBackground(for: .widget) {
             LinearGradient(colors: e.isDay ? [Color(red: 0.16, green: 0.38, blue: 0.78), Color(red: 0.36, green: 0.6, blue: 0.92)]
                                            : [Color(red: 0.05, green: 0.06, blue: 0.1), Color(red: 0.16, green: 0.17, blue: 0.22)],
@@ -323,5 +344,132 @@ struct DopplerIQWidget: Widget {
 
 @main
 struct DopplerIQWidgets: WidgetBundle {
-    var body: some Widget { DopplerIQWidget() }
+    var body: some Widget {
+        DopplerIQWidget()
+        TemperatureWidget()
+        MoreWidgets().body
+    }
+}
+
+// MARK: - Temperature gauge widget
+
+/// Current temperature on a ring that runs from the next 24 hours' low to high, with the warmest and
+/// coolest hours beside it. Small on the Home Screen / desktop, and a round gauge on the Lock Screen.
+struct TemperatureWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "DopplerIQTemperature", intent: WidgetPlaceIntent.self, provider: WxProvider()) { e in
+            TemperatureView(e: e)
+        }
+        .configurationDisplayName("Temperature")
+        .description("Today's temperature on a gauge, with the high and low and when they happen.")
+        .supportedFamilies(Self.families)
+    }
+    static var families: [WidgetFamily] {
+        #if os(iOS)
+        [.systemSmall, .accessoryCircular, .accessoryRectangular]
+        #else
+        [.systemSmall]
+        #endif
+    }
+}
+
+struct TemperatureView: View {
+    @Environment(\.widgetFamily) private var family
+    let e: WxEntry
+
+    private var lo: Double { min(e.trough?.temp ?? e.lo ?? (e.temp ?? 0) - 10, e.temp ?? .infinity) }
+    private var hi: Double { max(e.peak?.temp ?? e.hi ?? (e.temp ?? 0) + 10, e.temp ?? -.infinity, lo + 1) }
+    /// Where the current temperature sits between the low and the high (0...1).
+    private var fraction: Double { guard let t = e.temp else { return 0.5 }; return min(1, max(0, (t - lo) / (hi - lo))) }
+
+    var body: some View {
+        Group {
+            if let m = e.message, e.temp == nil {
+                Text(m).font(.caption).foregroundStyle(.secondary)
+            } else {
+                switch family {
+                #if os(iOS)
+                case .accessoryCircular:
+                    Gauge(value: e.temp ?? lo, in: lo...hi) { Text("°") } currentValueLabel: { Text(deg(e.temp)) }
+                        minimumValueLabel: { Text(deg(lo)).font(.system(size: 9)) } maximumValueLabel: { Text(deg(hi)).font(.system(size: 9)) }
+                        .gaugeStyle(.accessoryCircular)
+                case .accessoryRectangular:
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(deg(e.temp)) \(e.place)").font(.headline).lineLimit(1)
+                        Gauge(value: e.temp ?? lo, in: lo...hi) { EmptyView() }.gaugeStyle(.accessoryLinearCapacity)
+                        Text("\(deg(lo)) \(time(e.trough?.time))  ·  \(deg(hi)) \(time(e.peak?.time))").font(.caption2).foregroundStyle(.secondary)
+                    }
+                #endif
+                default: small
+                }
+            }
+        }
+        .widgetURL(WidgetLink.dashboard)
+        .containerBackground(for: .widget) {
+            LinearGradient(colors: [Color(white: 0.13), Color(white: 0.04)], startPoint: .top, endPoint: .bottom)
+        }
+    }
+
+    private var small: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 3) {
+                if e.locationBased { Image(systemName: "location.fill").font(.system(size: 8)) }
+                Text(e.locationBased && e.place == "My Location" ? "Current Location" : e.place).lineLimit(1)
+            }
+            .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
+            HStack(spacing: 4) {
+                ring.frame(width: 80, height: 80)
+                VStack(spacing: 2) {
+                    pill(e.peak?.temp ?? hi, warm: true)
+                    Text(time(e.peak?.time)).font(.caption2).foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    pill(e.trough?.temp ?? lo, warm: false)
+                    Text(time(e.trough?.time)).font(.caption2).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    /// 270 degree ring, open at the bottom, colored cool to warm, with a dot at the current temperature.
+    private var ring: some View {
+        GeometryReader { g in
+            let side = min(g.size.width, g.size.height), lw = side * 0.11
+            let r = (side - lw) / 2
+            let angle = Angle.degrees(135 + 270 * fraction)
+            ZStack {
+                Circle().trim(from: 0, to: 0.75)
+                    .stroke(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                    .rotationEffect(.degrees(135))
+                Circle().trim(from: 0, to: 0.75)
+                    .stroke(AngularGradient(colors: [Color(red: 0.35, green: 0.65, blue: 1), Color(red: 0.98, green: 0.8, blue: 0.3), Color(red: 0.98, green: 0.4, blue: 0.3)],
+                                            center: .center, startAngle: .degrees(0), endAngle: .degrees(270)),
+                            style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                    .rotationEffect(.degrees(135))
+                Circle().fill(.white).frame(width: lw * 1.25, height: lw * 1.25)
+                    .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 2))
+                    .offset(x: r * cos(angle.radians), y: r * sin(angle.radians))
+                Text(deg(e.temp)).font(.system(size: side * 0.3, weight: .medium)).minimumScaleFactor(0.6)
+            }
+            .frame(width: side, height: side)
+        }
+    }
+
+    private func pill(_ v: Double, warm: Bool) -> some View {
+        Text(deg(v))
+            .font(.system(size: 15, weight: .semibold)).monospacedDigit()
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .frame(minWidth: 44)
+            .background((warm ? Color(red: 0.98, green: 0.45, blue: 0.3) : Color(red: 0.35, green: 0.62, blue: 1)).opacity(0.35), in: Capsule())
+    }
+
+    private func time(_ d: Date?) -> String {
+        guard let d else { return "" }
+        if abs(d.timeIntervalSinceNow) < 45 * 60 { return "now" }
+        let f = DateFormatter(); f.dateFormat = "ha"
+        return f.string(from: d).lowercased().replacingOccurrences(of: "m", with: "")   // 3p, 6a
+    }
 }

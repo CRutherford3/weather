@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">DopplerIQ</string>
+    <string name="widget_glance_name">Glance</string>
+    <string name="widget_glance_desc">The temperature ring with the high and low, plus air quality and UV.</string>
+</resources>

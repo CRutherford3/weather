@@ -12,27 +12,39 @@ const ml = window.maplibregl;
 const ESRI = 'https://services.arcgisonline.com/ArcGIS/rest/services';
 const IEM = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
-export const STYLES = {
-  dark: { name: 'Dark', url: 'https://tiles.openfreemap.org/styles/dark' },
-  light: { name: 'Light', url: 'https://tiles.openfreemap.org/styles/positron' },
-  streets: { name: 'Streets', url: 'https://tiles.openfreemap.org/styles/liberty' },
-  satellite: {
-    name: 'Satellite',
+// Map backgrounds: the same list as the app. Place names sit in a separate layer drawn above the radar.
+const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+const zxy = (t) => t.replace('{z}', '4').replace('{x}', '4').replace('{y}', '6');
+function rasterStyle(name, blurb, base, labels, maxzoom = 16, attribution = 'Tiles &copy; Esri') {
+  return {
+    name, blurb, thumb: zxy(base),
     url: {
-      version: 8,
-      glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+      version: 8, glyphs: GLYPHS,
       sources: {
-        img: { type: 'raster', tiles: [`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`], tileSize: 256, maxzoom: 18, attribution: 'Imagery &copy; Esri' },
-        ref: { type: 'raster', tiles: [`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`], tileSize: 256, maxzoom: 18 },
+        img: { type: 'raster', tiles: [base], tileSize: 256, maxzoom, attribution },
+        ...(labels ? { ref: { type: 'raster', tiles: [labels], tileSize: 256, maxzoom } } : {}),
       },
-      layers: [{ id: 'img', type: 'raster', source: 'img' }, { id: 'ref', type: 'raster', source: 'ref' }],
+      layers: [{ id: 'img', type: 'raster', source: 'img' }, ...(labels ? [{ id: 'ref', type: 'raster', source: 'ref' }] : [])],
     },
-  },
+  };
+}
+export const STYLES = {
+  dark: rasterStyle('Grayscale', 'Dark gray, radar pops', `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`),
+  light: rasterStyle('Daylight', 'Light gray', `${ESRI}/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`),
+  roads: rasterStyle('Roads', 'Street map', `${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`, null, 18),
+  aerial: rasterStyle('Aerial', 'Satellite photos', `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, 18),
+  topo: rasterStyle('Topography', 'Terrain and elevation', `${ESRI}/World_Topo_Map/MapServer/tile/{z}/{y}/{x}`, null, 18),
+  // OpenFreeMap vector styles (CARTO's raster tiles need a key on the web)
+  proDark: { name: 'Pro Dark', blurb: 'Black, minimal', url: 'https://tiles.openfreemap.org/styles/dark' },
+  proLight: { name: 'Pro Light', blurb: 'White, minimal', url: 'https://tiles.openfreemap.org/styles/positron' },
+  vfr: rasterStyle('VFR Sectional', 'FAA aviation chart', 'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}', null, 12, 'FAA'),
 };
+// Older saved choices
+const LEGACY_STYLE = { streets: 'roads', satellite: 'aerial' };
 
 const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, rainrate: false, echotops: false, road: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
-  style: store.get('mapStyle', 'auto'),
+  style: ((v) => LEGACY_STYLE[v] || v)(store.get('mapStyle', 'auto')),
   radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
   opacity: store.get('opacity', 0.75),
   speed: store.get('speed', 450),
@@ -110,7 +122,7 @@ function onStyleLoad() {
   for (const id of Object.keys(active)) { try { active[id]?.remove?.(); } catch { /* gone */ } delete active[id]; }
   addFrontImages();
   if (routeData) setTimeout(() => drawRoute(...routeData, true), 0);
-  if ((S.style === 'auto' ? themeFn() : S.style) === 'dark') brightenDark();
+  if (S.style === 'proDark') brightenDark();
   // Let the base map paint first, then bring in radar and the other layers
   let started = false;
   const go = () => { if (started) return; started = true; applyLayers(); };
@@ -444,12 +456,32 @@ export async function useSite(code, prod, tilt) {
   S.radarSrc = 'site'; S.layers.radar = true; save();
   refresh('radar'); updateDock(); if (active.sites) refresh('sites');
 }
+const RADOME_SVG = '<svg class="radome-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7.8" r="4.6" fill="currentColor" stroke="none"/><rect x="9" y="12.5" width="6" height="1.5" rx=".5" fill="currentColor" stroke="none"/><path stroke-width="1.3" d="M9.9 14 8.4 22.6M14.1 14l1.5 8.6M9.9 14l4.8 3.6M14.1 14l-4.8 3.6M9.3 17.6l6.3 5M14.7 17.6l-6.3 5M7.2 22.6h9.6"/><path stroke-width="1.5" d="M5.2 4.2a7 7 0 0 0 0 7.2M2.6 2.6a10 10 0 0 0 0 10.4M18.8 4.2a7 7 0 0 1 0 7.2M21.4 2.6a10 10 0 0 1 0 10.4"/></svg>';
+// Radar site marker: a NEXRAD radome on its lattice tower, on a dark disc (purple when it's the radar showing)
+function radomeImages() {
+  const draw = (id, ring, fill, ink) => {
+    if (map.hasImage(id)) return;
+    const S2 = 2, D = 30 * S2, c = document.createElement('canvas'); c.width = c.height = D;
+    const g = c.getContext('2d');
+    g.beginPath(); g.arc(D / 2, D / 2, D / 2 - 2 * S2, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); g.lineWidth = 2 * S2; g.strokeStyle = ring; g.stroke();
+    g.save(); g.translate(D * 0.2, D * 0.17); g.scale((D * 0.6) / 24, (D * 0.6) / 24);
+    g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = 1.5; g.lineCap = 'round';
+    g.beginPath(); g.arc(12, 7.6, 5.6, 0, Math.PI * 2); g.fill();
+    g.fillRect(8.3, 13, 7.4, 1.6);
+    g.stroke(new Path2D('M9.4 14.6 7.6 22.6M14.6 14.6l1.8 8M9.4 14.6l5.9 4M14.6 14.6l-5.9 4M8.7 18.6l7.7 4M15.3 18.6l-7.7 4M6.4 22.6h11.2'));
+    g.restore();
+    map.addImage(id, g.getImageData(0, 0, D, D), { pixelRatio: S2 });
+  };
+  draw('radome', '#a78bfa', 'rgba(11,16,32,.9)', '#f5f3ff');
+  draw('radome-on', '#ffffff', '#8b5cf6', '#ffffff');
+}
 ADD.sites = async () => {
   const list = await radarSites();
   const fc = { type: 'FeatureCollection', features: list.map((x) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [x.lon, x.lat] }, properties: { id: x.id, code: x.code, name: x.name, on: S.radarSrc === 'site' && S.site === x.code ? 1 : 0 } })) };
+  radomeImages();
   return geo('sites', fc, [
-    { type: 'circle', top: true, paint: { 'circle-radius': ['case', ['==', ['get', 'on'], 1], 9, 6], 'circle-color': ['case', ['==', ['get', 'on'], 1], '#8b5cf6', '#0b1020'], 'circle-stroke-color': ['case', ['==', ['get', 'on'], 1], '#fff', '#a78bfa'], 'circle-stroke-width': 2 } },
-    { type: 'symbol', top: true, layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.35], 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': false }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b1020', 'text-halo-width': 1.6 } },
+    { type: 'symbol', top: true, layout: { 'icon-image': ['case', ['==', ['get', 'on'], 1], 'radome-on', 'radome'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 7, 0.85, 10, 1], 'icon-allow-overlap': true } },
+    { type: 'symbol', top: true, minzoom: 6, layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.7], 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': false }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b1020', 'text-halo-width': 1.6 } },
   ], (f, ll) => {
     const p = f.properties, cur = S.radarSrc === 'site' && S.site === p.code;
     const tilted = SITE_PRODUCTS[S.siteFam]?.[1];
@@ -942,13 +974,6 @@ function openSourceSheet() {
     $('#speed', b).oninput = (e) => { S.speed = 1150 - +e.target.value; save(); if (R.playing) play(); };
   });
 }
-function openStyleSheet() {
-  const cur = S.style;
-  const cards = [['auto', 'Auto', 'Matches light / dark mode'], ['dark', 'Dark', ''], ['light', 'Light', ''], ['streets', 'Streets', ''], ['satellite', 'Satellite', '']];
-  openSheet('Map Style', `<div class="style-grid">${cards.map(([v, t, d]) => `<button class="style-card${cur === v ? ' on' : ''}" data-v="${v}"><span class="style-thumb ${v}"></span><b>${t}</b>${d ? `<small>${d}</small>` : ''}</button>`).join('')}</div>`, (b) => {
-    $$('.style-card', b).forEach((c) => c.onclick = () => { setStyle(c.dataset.v); $$('.style-card', b).forEach((x) => x.classList.toggle('on', x === c)); });
-  });
-}
 const OPTS = {
   radarOpts: () => `<label class="slider">Opacity <input type="range" data-o="opacity" min="0.2" max="1" step="0.05" value="${S.opacity}"></label><label class="slider">Loop speed <input type="range" data-o="speed" min="150" max="1000" step="50" value="${1150 - S.speed}"></label>`,
   satOpts: () => `<div class="seg" data-o="sat">${[['ir', 'Infrared'], ['vis', 'Visible'], ['wv', 'Water vapor'], ['geocolor', 'True color']].map(([v, t]) => `<button data-v="${v}" class="${S.sat === v ? 'on' : ''}">${t}</button>`).join('')}</div><small class="muted">True color runs about 90 minutes behind real time.</small>`,
@@ -965,61 +990,186 @@ const OPTS = {
   },
   rainOpts: () => `<div class="seg" data-o="rain">${[['1h', 'Past hour'], ['24h', '24 hours'], ['72h', '72 hours']].map(([v, t]) => `<button data-v="${v}" class="${S.rain === v ? 'on' : ''}">${t}</button>`).join('')}</div>`,
 };
+// ================= Layers sheet: Loops / Overlays / Radars (same layout as the app) =================
+// Loops: picture cards for the radar, satellite and rain loops. Overlays: switches for everything drawn on top.
+// Radars: every NEXRAD site by state, the three nearest first, with search.
+const LOOP_IDS = new Set(['radar', 'sat', 'lightning', 'rainrate', 'rain', 'echotops', 'sites']);
+const THUMB_BASE = `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/4/6/4`;
+let layersTab = store.get('layersTab', 'loops');
+let statesP;
+const siteStates = () => (statesP ||= fetch('/data/radar-states.json').then((r) => r.json()).catch(() => ({})));
+const thumb = (img, sym) => `<span class="lthumb" style="background-image:${img ? `url('${img}'),` : ''}url('${THUMB_BASE}')">${sym ? `<i>${sym}</i>` : ''}</span>`;
+
 function openLayersSheet() {
+  const pills = `<div class="lpills">${[['loops', 'Loops'], ['overlays', 'Overlays'], ['radars', 'Radars']].map(([k, t]) => `<button data-ltab="${k}" class="${layersTab === k ? 'on' : ''}">${t}</button>`).join('')}</div><div id="lpane"></div>`;
+  openSheet('Layers', pills, (b) => {
+    $$('[data-ltab]', b).forEach((x) => x.onclick = () => {
+      layersTab = x.dataset.ltab; store.set('layersTab', layersTab);
+      $$('[data-ltab]', b).forEach((y) => y.classList.toggle('on', y === x));
+      renderLayersPane();
+    });
+    renderLayersPane();
+  });
+}
+function renderLayersPane() {
+  const p = $('#lpane'); if (!p) return;
+  if (layersTab === 'overlays') overlaysPane(p);
+  else if (layersTab === 'radars') radarsPane(p);
+  else loopsPane(p);
+}
+
+// ---------- Loops ----------
+function loopsPane(p) {
+  const mosaic = S.layers.radar && S.radarSrc !== 'site';
+  const geoT = new Date(Math.floor((Date.now() - 90 * 60e3) / 600e3) * 600e3).toISOString().replace('.000Z', 'Z');
+  const goes = (ch) => `${IEM}/goes_east_conus_${ch}/4/4/6.png`;
+  const cards = [
+    ['radar:us', 'Hi-Def Radar', 'US NEXRAD mosaic, sharpest detail, every 5 minutes', mosaic && S.radarSrc === 'us', `${IEM}/nexrad-n0q-900913/4/4/6.png`],
+    ['radar:global', 'Global Radar', 'Worldwide coverage at lower resolution', mosaic && S.radarSrc === 'global', null, '🌐'],
+    ['sat:geocolor', 'True Color Satellite', 'Clouds as your eyes would see them (daytime, about 90 minutes behind)', S.layers.sat && S.sat === 'geocolor', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/${geoT}/GoogleMapsCompatible_Level7/4/6/4.jpg`],
+    ['sat:vis', 'Visible Satellite', 'Sharp daytime cloud detail', S.layers.sat && S.sat === 'vis', goes('ch02')],
+    ['sat:ir', 'Infrared Satellite', 'Cloud-top temperatures, day and night', S.layers.sat && S.sat === 'ir', goes('ch13')],
+    ['sat:wv', 'Water Vapor', 'Moisture in the middle and upper air', S.layers.sat && S.sat === 'wv', goes('ch09')],
+    ['rainrate', 'Rain Rate', "How hard it's raining right now", S.layers.rainrate, null, '💧'],
+    ['rain:1h', 'Past Hour Rain', 'Rain that fell in the last hour', S.layers.rain && S.rain === '1h', `${IEM}/q2-n1p-900913/4/4/6.png`],
+    ['rain:24h', 'Rain Totals (24 hr)', 'Rain that fell in the last day', S.layers.rain && S.rain === '24h', `${IEM}/q2-p24h-900913/4/4/6.png`],
+    ['rain:72h', 'Rain Totals (3 days)', 'Rain that fell in the last three days', S.layers.rain && S.rain === '72h', `${IEM}/q2-p72h-900913/4/4/6.png`],
+    ['echotops', 'Echo Tops', 'How tall the storms are', S.layers.echotops, `${IEM}/nexrad-eet/4/4/6.png`],
+    ['lightning', 'Lightning', 'Live strikes and strike density', S.layers.lightning, null, '⚡'],
+    ['none', 'No Loop', 'Hide the radar and satellite', !S.layers.radar && !S.layers.sat, null, '⊘'],
+  ];
+  p.innerHTML = `<div class="lcards">${cards.map(([k, t, d, on, img, sym]) => {
+    const id = k.split(':')[0];
+    const locked = k !== 'none' && !canLayer(id);
+    return `<button class="lcard${on && !locked ? ' on' : ''}" data-loop="${k}">${thumb(img, sym)}<span class="ltext"><b>${t} ${locked ? badge(tierOf(id)) : ''}</b><small>${d}</small></span>${locked ? '<span class="llock">🔒</span>' : ''}</button>`;
+  }).join('')}</div>
+  <div class="sheet-sub">Radar settings</div><div class="lrow-opts">${OPTS.radarOpts()}</div>`;
+
+  $$('[data-loop]', p).forEach((c) => c.onclick = () => {
+    const k = c.dataset.loop; const [id, v] = k.split(':');
+    if (k === 'none') {
+      S.layers.radar = false; S.layers.sat = false;
+      if (S.radarSrc === 'site') S.radarSrc = 'us';
+      applyLayers(); return loopsPane(p);
+    }
+    if (!canLayer(id)) { gate(id, layerName(id)); return; }
+    if (id === 'radar') {
+      S.layers.radar = true;
+      if (S.radarSrc !== v) { S.radarSrc = v; disable('radar'); }
+      applyLayers();
+    } else if (id === 'sat' || id === 'rain') {
+      const key = id === 'sat' ? 'sat' : 'rain';
+      if (S.layers[id] && S[key] === v) toggleLayer(id, false);
+      else { S[key] = v; S.layers[id] = true; save(); refresh(id); }
+    } else toggleLayer(id, !S.layers[id]);
+    loopsPane(p);
+  });
+  $$('[data-o="opacity"]', p).forEach((i) => i.oninput = () => { S.opacity = +i.value; showFrame(R.idx); save(); });
+  $$('[data-o="speed"]', p).forEach((i) => i.oninput = () => { S.speed = 1150 - +i.value; save(); if (R.playing) play(); });
+}
+
+// ---------- Overlays ----------
+function overlaysPane(p) {
   const row = ([id, name, opts]) => `<div class="lrow" data-id="${id}">
     <button class="lrow-main" ${opts ? `data-exp="${id}"` : ''}><span>${name} ${badge(tierOf(id))}</span>${opts ? '<i class="chev">›</i>' : ''}</button>
     <label class="tg${canLayer(id) ? '' : ' locked'}"><input type="checkbox" data-layer="${id}" ${S.layers[id] && canLayer(id) ? 'checked' : ''}><span></span></label>
-    ${opts ? `<div class="lrow-opts" ${id === 'sites' && S.layers.sites && canLayer('sites') ? '' : 'hidden'}>${OPTS[opts]()}</div>` : ''}</div>`;
-  // Collapsible groups (remembered). Radar & Satellite and Pro start open.
-  const openSet = new Set(store.get('layerGroupsOpen', ['Radar & Satellite', 'Pro: Radar, Marine & Space']));
-  const group = ([g, rows, kind]) => {
+    ${opts ? `<div class="lrow-opts" hidden>${OPTS[opts]()}</div>` : ''}</div>`;
+  const openSet = new Set(store.get('layerGroupsOpen', ['Severe Weather', 'Pro: Radar, Marine & Space']));
+  const groups = LAYER_GROUPS.map(([g, rows, kind]) => [g, rows.filter(([id]) => !LOOP_IDS.has(id)), kind]).filter(([, rows]) => rows.length);
+  p.innerHTML = groups.map(([g, rows, kind]) => {
+    const name = kind === 'pro' ? 'Marine & Space' : g;
     const n = rows.filter(([id]) => S.layers[id] && canLayer(id)).length;
-    const body = kind === 'pro'
-      ? `${row(rows[0])}<div class="sheet-sub lsub">Marine & Space</div>${rows.slice(1).map(row).join('')}`
-      : rows.map(row).join('');
-    return `<div class="lgroup${openSet.has(g) ? ' open' : ''}${kind === 'pro' ? ' pro' : ''}" data-g="${esc(g)}">
-      <button class="lgroup-head"><span>${g}${kind === 'pro' ? ` ${badge('pro')}` : ''}</span><span class="muted small">${n ? `${n} on` : ''}</span><i class="chev">›</i></button>
-      <div class="lgroup-body">${body}</div></div>`;
-  };
-  openSheet('Layers', LAYER_GROUPS.map(group).join('') +
-    '<p class="muted small sheet-foot">Tap anywhere on the map for that spot\'s forecast, or to save it as a place.</p>', (b) => {
-    $$('.lgroup-head', b).forEach((h) => h.onclick = () => {
-      const g = h.parentElement; g.classList.toggle('open');
-      const cur = new Set(store.get('layerGroupsOpen', ['Radar & Satellite', 'Pro: Radar, Marine & Space']));
-      if (g.classList.contains('open')) cur.add(g.dataset.g); else cur.delete(g.dataset.g);
-      store.set('layerGroupsOpen', [...cur]);
-    });
-    // Doppler product and tilt (Pro or Radar Pack)
-    const nearestThen = async (fam, tilt) => {
-      if (!canLayer('sites')) { gate('sites', 'Doppler radar'); return; }
+    return `<div class="lgroup${openSet.has(g) ? ' open' : ''}" data-g="${esc(g)}">
+      <button class="lgroup-head"><span>${name}${kind === 'pro' ? ` ${badge('pro')}` : ''}</span><span class="muted small">${n ? `${n} on` : ''}</span><i class="chev">›</i></button>
+      <div class="lgroup-body">${rows.map(row).join('')}</div></div>`;
+  }).join('') + '<p class="muted small sheet-foot">Tap anywhere on the map for that spot\'s forecast, or to save it as a place.</p>';
+
+  $$('.lgroup-head', p).forEach((h) => h.onclick = () => {
+    const g = h.parentElement; g.classList.toggle('open');
+    const cur = new Set(store.get('layerGroupsOpen', ['Severe Weather', 'Pro: Radar, Marine & Space']));
+    if (g.classList.contains('open')) cur.add(g.dataset.g); else cur.delete(g.dataset.g);
+    store.set('layerGroupsOpen', [...cur]);
+  });
+  $$('[data-layer]', p).forEach((cb) => cb.onchange = () => {
+    const id = cb.dataset.layer;
+    if (cb.checked && !canLayer(id)) { cb.checked = false; gate(id, layerName(id)); return; }
+    if (cb.checked && id === 'traffic' && !KEYS.tomtom) { cb.checked = false; toast('Traffic needs a TomTom key in config.js'); return; }
+    toggleLayer(id, cb.checked);
+  });
+  $$('[data-exp]', p).forEach((btn) => btn.onclick = () => { const o = btn.closest('.lrow').querySelector('.lrow-opts'); o.hidden = !o.hidden; btn.classList.toggle('open', !o.hidden); });
+  $$('.seg[data-o]', p).forEach((sg) => $$('button', sg).forEach((btn) => btn.onclick = () => {
+    $$('button', sg).forEach((x) => x.classList.toggle('on', x === btn));
+    const key = sg.dataset.o; S[key] = btn.dataset.v; save();
+    const lid = key === 'hail' ? 'hail' : key === 'surgeCat' ? 'surgerisk' : 'snowprob';
+    if (!canLayer(lid)) { gate(lid, layerName(lid)); return; }
+    S.layers[lid] = true; const t = $(`[data-layer="${lid}"]`, p); if (t) t.checked = true; refresh(lid); updateDock();
+  }));
+}
+
+// ---------- Radars ----------
+async function radarsPane(p, q = '') {
+  const locked = !canLayer('sites');
+  const cur = S.radarSrc === 'site' && S.layers.radar ? S.site : null;
+  const head = `<div class="rsearch"><input type="search" id="rq" placeholder="Search radars by name, ID or state" value="${esc(q)}" autocomplete="off"></div>
+    ${locked ? `<button class="rpack" data-unlock><b>Doppler radar at any site ${badge('pro')}</b><small>Reflectivity and velocity at 4 tilts, dual-pol, VIL and echo tops. Included in Pro, or get the one-time ${esc(RADAR_PACK_NAME)}.</small></button>`
+      : `<div class="lrow-opts rprods">${OPTS.dopplerOpts()}</div>`}
+    ${cur ? '<button class="opt-row" data-mosaic><span class="opt-thumb us"></span><span><b>Back to Hi-Def Radar</b><small>The smooth US mosaic</small></span></button>' : ''}`;
+  p.innerHTML = `${head}<div id="rlist"><div class="empty">Loading radars…</div></div>`;
+  let list, states;
+  try { [list, states] = await Promise.all([radarSites(), siteStates()]); } catch { $('#rlist', p).innerHTML = '<div class="empty">Radar sites are unavailable right now.</div>'; return; }
+  const c = map.getCenter();
+  const miles = (s) => Math.round(Math.hypot(s.lat - c.lat, (s.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) * 69);
+  const state = (s) => states[s.id] || 'Outside the US';
+  const row = (s) => `<button class="srow${cur === s.code ? ' on' : ''}" data-site="${s.code}">${RADOME_SVG}<span><b>${s.id}</b><small>${esc(s.name)} · ${miles(s)} mi</small></span>${locked ? '<span class="llock">🔒</span>' : '<i>✓</i>'}</button>`;
+  const draw = (term) => {
+    const t = term.trim().toLowerCase();
+    const match = t ? list.filter((s) => `${s.id} ${s.name} ${state(s)}`.toLowerCase().includes(t)) : list;
+    const byState = {};
+    for (const s of match) (byState[state(s)] ||= []).push(s);
+    const near = t ? '' : `<div class="sheet-sub">Nearest to the map center</div>${[...list].sort((a, b) => miles(a) - miles(b)).slice(0, 3).map(row).join('')}`;
+    $('#rlist', p).innerHTML = near + Object.keys(byState).sort((a, b) => (a === 'Outside the US') - (b === 'Outside the US') || a.localeCompare(b))
+      .map((st) => `<div class="sheet-sub">${esc(st)}</div>${byState[st].map(row).join('')}`).join('') || '<div class="empty">No radars match that search.</div>';
+    $$('[data-site]', p).forEach((b) => b.onclick = async () => {
+      if (locked) { gate('sites', 'Doppler radar'); return; }
       S.layers.sites = true;
-      let code = S.radarSrc === 'site' && S.site ? S.site : null;
-      if (!code) { const c = map.getCenter(); code = nearestSite(await radarSites(), c.lat, c.lng)?.code || 'MLB'; }
-      await useSite(code, fam, tilt);
+      await useSite(b.dataset.site, S.radarSrc === 'site' ? S.siteFam : 'ref', S.radarSrc === 'site' ? S.tilt : 0);
       if (!active.sites) applyLayers();
-      openLayersSheet();
-    };
-    $$('[data-doppler] [data-sp], .lrow-opts [data-sp="mosaic"]', b).forEach((x) => x.onclick = () => {
-      if (x.dataset.sp === 'mosaic') { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); openLayersSheet(); return; }
-      nearestThen(x.dataset.sp, S.radarSrc === 'site' ? S.tilt : 0);
+      const st = list.find((x) => x.code === b.dataset.site); if (st) map.flyTo({ center: [st.lon, st.lat], zoom: Math.max(map.getZoom(), 6.5), duration: 900 });
+      closeSheet();
     });
-    $$('[data-dtilt] [data-tilt]', b).forEach((x) => x.onclick = () => nearestThen(S.radarSrc === 'site' ? S.siteFam : 'ref', +x.dataset.tilt));
-    $$('[data-layer]', b).forEach((cb) => cb.onchange = () => {
-      const id = cb.dataset.layer;
-      if (cb.checked && !canLayer(id)) { cb.checked = false; gate(id, layerName(id)); return; }
-      if (cb.checked && id === 'traffic' && !KEYS.tomtom) { cb.checked = false; toast('Traffic needs a TomTom key in config.js'); return; }
-      toggleLayer(id, cb.checked);
+  };
+  draw(q);
+  $('#rq', p).oninput = (e) => draw(e.target.value);
+  const un = $('[data-unlock]', p); if (un) un.onclick = () => gate('sites', 'Doppler radar');
+  const mo = $('[data-mosaic]', p); if (mo) mo.onclick = () => { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); radarsPane(p); };
+  // Product and tilt for the current (or nearest) site
+  const nearestThen = async (fam, tilt) => {
+    S.layers.sites = true;
+    const code = S.radarSrc === 'site' && S.site ? S.site : nearestSite(list, c.lat, c.lng)?.code || 'MLB';
+    await useSite(code, fam, tilt);
+    if (!active.sites) applyLayers();
+    radarsPane(p, $('#rq', p)?.value || '');
+  };
+  $$('[data-doppler] [data-sp]', p).forEach((x) => x.onclick = () => nearestThen(x.dataset.sp, S.radarSrc === 'site' ? S.tilt : 0));
+  $$('.rprods [data-sp="mosaic"]', p).forEach((x) => x.onclick = () => { S.radarSrc = 'us'; save(); refresh('radar'); updateDock(); if (active.sites) refresh('sites'); radarsPane(p); });
+  $$('[data-dtilt] [data-tilt]', p).forEach((x) => x.onclick = () => nearestThen(S.radarSrc === 'site' ? S.siteFam : 'ref', +x.dataset.tilt));
+}
+const RADAR_PACK_NAME = 'Pro Radar Pack';
+
+// ================= Map background (same choices as the app) =================
+function openStyleSheet() {
+  const cur = S.style;
+  const opts = [['auto', 'Auto', 'Grayscale at night, Daylight in light mode']].concat(Object.entries(STYLES).map(([k, s]) => [k, s.name, s.blurb || '']));
+  const tile = (k) => (k === 'auto' ? null : STYLES[k].thumb);
+  openSheet('Map Style', `<div class="style-grid">${opts.map(([v, t, d]) => {
+    const locked = v === 'vfr' && !canLayer('charts');
+    const img = tile(v);
+    return `<button class="style-card${cur === v ? ' on' : ''}" data-v="${v}"><span class="style-thumb ${v}"${img ? ` style="background-image:url('${img}')"` : ''}></span><b>${t} ${v === 'vfr' ? badge('pro') : ''}</b>${d ? `<small>${d}</small>` : ''}${locked ? '<span class="llock">🔒</span>' : ''}</button>`;
+  }).join('')}</div>`, (b) => {
+    $$('.style-card', b).forEach((c) => c.onclick = () => {
+      if (c.dataset.v === 'vfr' && !canLayer('charts')) { gate('charts', 'The VFR sectional map'); return; }
+      setStyle(c.dataset.v); $$('.style-card', b).forEach((x) => x.classList.toggle('on', x === c));
     });
-    $$('[data-exp]', b).forEach((btn) => btn.onclick = () => { const o = btn.closest('.lrow').querySelector('.lrow-opts'); o.hidden = !o.hidden; btn.classList.toggle('open', !o.hidden); });
-    $$('[data-o="opacity"]', b).forEach((i) => i.oninput = () => { S.opacity = +i.value; showFrame(R.idx); save(); });
-    $$('[data-o="speed"]', b).forEach((i) => i.oninput = () => { S.speed = 1150 - +i.value; save(); if (R.playing) play(); });
-    $$('.seg[data-o]', b).forEach((sg) => $$('button', sg).forEach((btn) => btn.onclick = () => {
-      $$('button', sg).forEach((x) => x.classList.toggle('on', x === btn));
-      const key = sg.dataset.o; S[key] = btn.dataset.v; save();
-      const lid = key === 'sat' ? 'sat' : key === 'hail' ? 'hail' : key === 'surgeCat' ? 'surgerisk' : key === 'snowDay' || key === 'snowAmt' ? 'snowprob' : 'rain';
-      if (!canLayer(lid)) { gate(lid, layerName(lid)); return; }
-      S.layers[lid] = true; $(`[data-layer="${lid}"]`, b).checked = true; refresh(lid); updateDock();
-    }));
   });
 }
 
