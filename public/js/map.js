@@ -45,7 +45,8 @@ const LEGACY_STYLE = { streets: 'roads', satellite: 'aerial' };
 const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, rainrate: false, echotops: false, road: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: ((v) => LEGACY_STYLE[v] || v)(store.get('mapStyle', 'auto')),
-  radarSrc: store.get('radarSrc', 'us'), // 'site' only while the Doppler layer is on (see buildRadar)
+  radarSrc: store.get('radarSrc', 'us'),
+  hiDef: store.get('radarHiDef', true), // US mosaic: Hi-Def (cleaned and smoothed) or Standard (raw) // 'site' only while the Doppler layer is on (see buildRadar)
   opacity: store.get('opacity', 0.75),
   speed: store.get('speed', 450),
   sat: store.get('satType', 'ir'),
@@ -60,7 +61,7 @@ export const S = {
   tilt: +store.get('siteTilt', 0) || 0,
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
-const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); store.set('siteFam', S.siteFam); store.set('siteTilt', S.tilt); };
+const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('radarHiDef', S.hiDef); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); store.set('siteFam', S.siteFam); store.set('siteTilt', S.tilt); };
 
 export const LAYER_GROUPS = [
   // Pro group: single-site Doppler radar (also in the Radar Pack), then marine and space layers
@@ -91,7 +92,74 @@ const active = {};
 const clickers = []; // [layerId, handler]
 
 // ================= init =================
+// ================= Hi-Def radar =================
+// Same recipe as the app: drop the light-blue and gray returns (drizzle, clear-air clutter, speckle), clear isolated specks,
+// then blur and firm up the edges so storms become smooth rounded shapes instead of pixel blocks.
+function hiDefPixels(d, w, h) {
+  const n = w * h;
+  for (let k = 0; k < n; k++) {
+    const i = k * 4; if (!d[i + 3]) continue;
+    const r = d[i], g = d[i + 1], b = d[i + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    // light blue (about 5 to 15 dBZ) and the gray-blue clear-air returns (below about 5 dBZ)
+    if ((r < 90 && b > 130 && b > g - 40) || (mx - mn < 80 && mx < 235)) d[i + 3] = 0;
+  }
+  const filled = new Uint8Array(n);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let k = 0; k < n; k++) filled[k] = d[k * 4 + 3] > 0 ? 1 : 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const k = y * w + x; if (!filled[k]) continue;
+      const c = filled[k - w - 1] + filled[k - w] + filled[k - w + 1] + filled[k - 1] + filled[k + 1] + filled[k + w - 1] + filled[k + w] + filled[k + w + 1];
+      if (c < 3) d[k * 4 + 3] = 0;
+    }
+  }
+  // Premultiply, blur (three box passes ~ Gaussian sigma 2.6), then firm up the alpha
+  const f = new Float32Array(n * 4);
+  for (let k = 0; k < n; k++) { const i = k * 4, a = d[i + 3] / 255; f[i] = d[i] * a; f[i + 1] = d[i + 1] * a; f[i + 2] = d[i + 2] * a; f[i + 3] = d[i + 3]; }
+  const tmp = new Float32Array(n * 4), r = 2, div = 1 / (2 * r + 1);
+  // Box blur along rows (step 4) or columns (step w*4), edges clamped so tiles join without seams
+  const box = (src, dst, horiz) => {
+    const len = horiz ? w : h, lines = horiz ? h : w, step = horiz ? 4 : w * 4;
+    for (let l = 0; l < lines; l++) {
+      const start = horiz ? l * w * 4 : l * 4, last = start + (len - 1) * step;
+      for (let ch = 0; ch < 4; ch++) {
+        const s0 = start + ch, sl = last + ch;
+        let sum = src[s0] * (r + 1);
+        for (let j = 1; j <= r; j++) sum += src[s0 + Math.min(j, len - 1) * step];
+        for (let j = 0, o = s0; j < len; j++, o += step) {
+          dst[o] = sum * div;
+          const add = j + r + 1 < len ? s0 + (j + r + 1) * step : sl;
+          const sub = j - r > 0 ? s0 + (j - r) * step : s0;
+          sum += src[add] - src[sub];
+        }
+      }
+    }
+  };
+  for (let pass = 0; pass < 3; pass++) { box(f, tmp, true); box(tmp, f, false); }
+  for (let k = 0; k < n; k++) {
+    const i = k * 4, a = f[i + 3];
+    const na = Math.max(0, Math.min(255, a * 1.9 - 0.32 * 255));
+    if (a < 1 || na <= 0) { d[i + 3] = 0; continue; }
+    d[i] = Math.min(255, f[i] / (a / 255)); d[i + 1] = Math.min(255, f[i + 1] / (a / 255)); d[i + 2] = Math.min(255, f[i + 2] / (a / 255)); d[i + 3] = na;
+  }
+}
+async function hiDefTile(params, abort) {
+  const res = await fetch(`https://${params.url.slice('hidef://'.length)}`, { signal: abort?.signal });
+  if (!res.ok) throw new Error(`radar tile ${res.status}`);
+  const bmp = await createImageBitmap(await res.blob());
+  const w = bmp.width, h = bmp.height;
+  const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(bmp, 0, 0);
+  const img = cx.getImageData(0, 0, w, h);
+  hiDefPixels(img.data, w, h);
+  cx.putImageData(img, 0, 0);
+  const blob = cv.convertToBlob ? await cv.convertToBlob({ type: 'image/png' }) : await new Promise((ok) => cv.toBlob(ok, 'image/png'));
+  return { data: await blob.arrayBuffer() };
+}
+let hiDefReady = false;
+
 export function initMap(el, loc, getTheme, handlers) {
+  if (!hiDefReady) { try { ml.addProtocol('hidef', hiDefTile); hiDefReady = true; } catch (e) { console.warn('hidef', e); } }
   themeFn = getTheme; H = handlers || {};
   map = new ml.Map({
     container: el, style: styleUrl(), center: [loc.lon, loc.lat], zoom: 6.5, maxZoom: 16, minZoom: 1,
@@ -279,7 +347,8 @@ async function buildRadar() {
     const bust = Math.floor(Date.now() / 300e3);
     for (let m = 50; m >= 0; m -= 5) {
       const lname = m ? `nexrad-n0q-900913-m${String(m).padStart(2, '0')}m` : 'nexrad-n0q-900913';
-      frames.push({ t: base - m * 60e3, url: `${IEM}/${lname}/{z}/{x}/{y}.png?_=${bust}`, maxzoom: 12 });
+      const tile = `${IEM}/${lname}/{z}/{x}/{y}.png?_=${bust}`;
+      frames.push({ t: base - m * 60e3, url: S.hiDef && hiDefReady ? tile.replace('https://', 'hidef://') : tile, maxzoom: 12 });
     }
   } else {
     const j = await feeds.rainviewer();
@@ -949,7 +1018,7 @@ function buildDock() {
 function updateDock() {
   const on = S.layers.radar;
   const sp = SITE_PRODUCTS[S.siteFam] || SITE_PRODUCTS.ref;
-  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? 'Hi-Def Radar' : S.radarSrc === 'site' ? `K${S.site || ''} ${sp[0].replace(/ \(.*\)/, '')}${sp[1] ? ` ${TILTS[S.tilt]}` : ''}` : 'Global Radar') : 'Radar Off';
+  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? (S.hiDef ? 'Hi-Def Radar' : 'Standard Radar') : S.radarSrc === 'site' ? `K${S.site || ''} ${sp[0].replace(/ \(.*\)/, '')}${sp[1] ? ` ${TILTS[S.tilt]}` : ''}` : 'Global Radar') : 'Radar Off';
   $('#legendBar').classList.remove('vel');
   $('#legendBar').style.background = on && S.radarSrc === 'site' && LEGENDS[S.siteFam] ? LEGENDS[S.siteFam] : `linear-gradient(90deg,${DBZ_LEGEND.join(',')})`;
   $('#legendBar').style.opacity = on ? 1 : 0.25;
@@ -957,9 +1026,11 @@ function updateDock() {
   if (!on) { $('#tlTime').textContent = '--'; $('#tlAgo').textContent = ''; }
 }
 function openSourceSheet() {
-  const opt = (v, t, d) => `<button class="opt-row${(v === 'off' ? !S.layers.radar : S.layers.radar && S.radarSrc === v) ? ' on' : ''}" data-v="${v}"><span class="opt-thumb ${v}"></span><span><b>${t}</b><small>${d}</small></span><i>✓</i></button>`;
+  const sel = (v) => (v === 'off' ? !S.layers.radar : S.layers.radar && (v === 'std' ? S.radarSrc === 'us' && !S.hiDef : v === 'us' ? S.radarSrc === 'us' && S.hiDef : S.radarSrc === v));
+  const opt = (v, t, d) => `<button class="opt-row${sel(v) ? ' on' : ''}" data-v="${v}"><span class="opt-thumb ${v}"></span><span><b>${t}</b><small>${d}</small></span><i>✓</i></button>`;
   openSheet('Radar', `<div class="opt-list">
-    ${opt('us', 'Hi-Def Radar', 'US NEXRAD mosaic · sharpest detail · every 5 minutes')}
+    ${opt('us', 'Hi-Def Radar', 'US NEXRAD mosaic · smoothed, drizzle and clutter removed')}
+    ${opt('std', 'Standard Radar', 'The US mosaic without smoothing filters')}
     ${opt('global', 'Global Radar', 'Worldwide coverage · lower resolution')}
     ${opt('off', 'Radar Off', 'Hide the radar loop')}</div>
     <div class="sheet-sub">Loop settings</div>
@@ -967,7 +1038,12 @@ function openSourceSheet() {
     <label class="slider">Loop speed <input type="range" id="speed" min="150" max="1000" step="50" value="${1150 - S.speed}"></label>`, (b) => {
     $$('.opt-row', b).forEach((r) => r.onclick = () => {
       const v = r.dataset.v;
-      if (v === 'off') S.layers.radar = false; else { S.layers.radar = true; if (S.radarSrc !== v) { S.radarSrc = v; disable('radar'); } }
+      if (v === 'off') S.layers.radar = false;
+      else {
+        const src = v === 'std' ? 'us' : v, hd = v !== 'std';
+        S.layers.radar = true;
+        if (S.radarSrc !== src || (src === 'us' && S.hiDef !== hd)) { S.radarSrc = src; S.hiDef = hd; disable('radar'); }
+      }
       applyLayers(); closeSheet();
     });
     $('#opacity', b).oninput = (e) => { S.opacity = +e.target.value; showFrame(R.idx); save(); };
@@ -998,7 +1074,16 @@ const THUMB_BASE = `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/4/6/4`;
 let layersTab = store.get('layersTab', 'loops');
 let statesP;
 const siteStates = () => (statesP ||= fetch('/data/radar-states.json').then((r) => r.json()).catch(() => ({})));
-const thumb = (img, sym) => `<span class="lthumb" style="background-image:${img ? `url('${img}'),` : ''}url('${THUMB_BASE}')">${sym ? `<i>${sym}</i>` : ''}</span>`;
+const thumb = (img, sym) => {
+  const hd = img?.startsWith('hidef:'); const src = hd ? img.slice(6) : img;
+  return `<span class="lthumb"${hd ? ` data-hd="${src}"` : ''} style="background-image:${src ? `url('${src}'),` : ''}url('${THUMB_BASE}')">${sym ? `<i>${sym}</i>` : ''}</span>`;
+};
+// Swap the Hi-Def card's thumbnail for a smoothed copy
+async function smoothThumbs(root) {
+  for (const el of $$('[data-hd]', root)) {
+    try { const { data } = await hiDefTile({ url: el.dataset.hd.replace('https://', 'hidef://') }); el.style.backgroundImage = `url('${URL.createObjectURL(new Blob([data], { type: 'image/png' }))}'),url('${THUMB_BASE}')`; } catch { /* keep the plain one */ }
+  }
+}
 
 function openLayersSheet() {
   const pills = `<div class="lpills">${[['loops', 'Loops'], ['overlays', 'Overlays'], ['radars', 'Radars']].map(([k, t]) => `<button data-ltab="${k}" class="${layersTab === k ? 'on' : ''}">${t}</button>`).join('')}</div><div id="lpane"></div>`;
@@ -1024,7 +1109,8 @@ function loopsPane(p) {
   const geoT = new Date(Math.floor((Date.now() - 90 * 60e3) / 600e3) * 600e3).toISOString().replace('.000Z', 'Z');
   const goes = (ch) => `${IEM}/goes_east_conus_${ch}/4/4/6.png`;
   const cards = [
-    ['radar:us', 'Hi-Def Radar', 'US NEXRAD mosaic, sharpest detail, every 5 minutes', mosaic && S.radarSrc === 'us', `${IEM}/nexrad-n0q-900913/4/4/6.png`],
+    ['radar:us', 'Hi-Def Radar', 'Smooth, high-resolution radar mosaic', mosaic && S.radarSrc === 'us' && S.hiDef, `hidef:${IEM}/nexrad-n0q-900913/4/4/6.png`],
+    ['radar:std', 'Standard Radar', 'The radar mosaic without smoothing filters', mosaic && S.radarSrc === 'us' && !S.hiDef, `${IEM}/nexrad-n0q-900913/4/4/6.png`],
     ['radar:global', 'Global Radar', 'Worldwide coverage at lower resolution', mosaic && S.radarSrc === 'global', null, '🌐'],
     ['sat:geocolor', 'True Color Satellite', 'Clouds as your eyes would see them (daytime, about 90 minutes behind)', S.layers.sat && S.sat === 'geocolor', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/${geoT}/GoogleMapsCompatible_Level7/4/6/4.jpg`],
     ['sat:vis', 'Visible Satellite', 'Sharp daytime cloud detail', S.layers.sat && S.sat === 'vis', goes('ch02')],
@@ -1044,6 +1130,7 @@ function loopsPane(p) {
     return `<button class="lcard${on && !locked ? ' on' : ''}" data-loop="${k}">${thumb(img, sym)}<span class="ltext"><b>${t} ${locked ? badge(tierOf(id)) : ''}</b><small>${d}</small></span>${locked ? '<span class="llock">🔒</span>' : ''}</button>`;
   }).join('')}</div>
   <div class="sheet-sub">Radar settings</div><div class="lrow-opts">${OPTS.radarOpts()}</div>`;
+  smoothThumbs(p);
 
   $$('[data-loop]', p).forEach((c) => c.onclick = () => {
     const k = c.dataset.loop; const [id, v] = k.split(':');
@@ -1054,8 +1141,9 @@ function loopsPane(p) {
     }
     if (!canLayer(id)) { gate(id, layerName(id)); return; }
     if (id === 'radar') {
+      const src = v === 'std' ? 'us' : v, hd = v !== 'std';
       S.layers.radar = true;
-      if (S.radarSrc !== v) { S.radarSrc = v; disable('radar'); }
+      if (S.radarSrc !== src || (src === 'us' && S.hiDef !== hd)) { S.radarSrc = src; S.hiDef = hd; disable('radar'); }
       applyLayers();
     } else if (id === 'sat' || id === 'rain') {
       const key = id === 'sat' ? 'sat' : 'rain';

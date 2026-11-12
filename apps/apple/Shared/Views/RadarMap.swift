@@ -1064,7 +1064,7 @@ struct RadarMap: PlatformViewRepresentable {
 
 
         /// Hi-Def look, as close to MyRadar as we can get:
-        ///  1. drop the light-blue returns (about 5 to 15 dBZ: drizzle, clutter, speckle)
+        ///  1. drop the light-blue returns (about 5 to 15 dBZ: drizzle, clutter, speckle) and the gray clear-air returns
         ///  2. remove leftover isolated specks (pixels with almost no neighbours)
         ///  3. blur colours and edges, then sharpen the edge back up, so storms become smooth rounded
         ///     shapes with soft colour blending instead of pixel blocks.
@@ -1080,7 +1080,9 @@ struct RadarMap: PlatformViewRepresentable {
             // 1. light blue out
             for k in 0..<n {
                 let i = k * 4
-                if p[i + 3] > 0 && p[i] < 90 && p[i + 2] > 130 && Int(p[i + 2]) > Int(p[i + 1]) - 40 {
+                let mx = max(p[i], p[i + 1], p[i + 2]), mn = min(p[i], p[i + 1], p[i + 2])
+                if p[i + 3] > 0 && ((p[i] < 90 && p[i + 2] > 130 && Int(p[i + 2]) > Int(p[i + 1]) - 40)
+                    || (Int(mx) - Int(mn) < 80 && mx < 235)) {   // also the gray-blue clear-air returns
                     p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0
                 }
             }

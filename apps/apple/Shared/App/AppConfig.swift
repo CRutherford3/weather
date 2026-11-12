@@ -4,7 +4,7 @@ import Foundation
 enum AppConfig {
     static let displayName = "DopplerIQ"
     /// App revision shown at the bottom of Settings. Bumped with every change (last number = revision).
-    static let version = "1.0.31"
+    static let version = "1.0.32"
     /// The website, used for links and for a few shared services (lightning, proxy).
     static let webBase = URL(string: "https://weather.dialcheck.io")!
     /// Public data API (lightning strikes, feed proxy). Its own Netlify site, so the website can stay private.
