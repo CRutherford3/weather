@@ -98,7 +98,7 @@ enum RadarService {
 
     /// Doppler products for one radar. Tilts 0-3 are the four lowest beam angles.
     enum SiteProduct: String, CaseIterable, Identifiable {
-        case ref, vel, srv, cc, zdr, hhc, vil, eet
+        case ref, vel, srv, cc, zdr, hhc, vil, eet, ntp
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -110,6 +110,7 @@ enum RadarService {
             case .hhc: return "Precipitation Type"
             case .vil: return "VIL"
             case .eet: return "Echo Tops"
+            case .ntp: return "Storm Total Rain"
             }
         }
         var detail: String {
@@ -122,6 +123,7 @@ enum RadarService {
             case .hhc: return "Rain, snow, hail, sleet"
             case .vil: return "Hail potential"
             case .eet: return "Storm top height"
+            case .ntp: return "Rain since this storm began"
             }
         }
         var hasTilts: Bool { [.ref, .vel, .cc, .zdr, .hhc].contains(self) }
@@ -148,6 +150,7 @@ enum RadarService {
         let k = s.kind
         if k == .ref && s.tilt == 0 { return await ridgeFrames(s, "N0B") }
         if k == .srv { return await ridgeFrames(s, "N0S") }
+        if k == .ntp { return await ridgeFrames(s, "NTP") }
         // Tilts, velocity, dual-pol, VIL, echo tops: decoded from NOAA Level III by our API
         var c = URLComponents(url: AppConfig.apiBase.appendingPathComponent("api/radar"), resolvingAgainstBaseURL: false)!
         c.queryItems = [.init(name: "site", value: s.code), .init(name: "family", value: k.rawValue), .init(name: "tilt", value: String(k.hasTilts ? s.tilt : 0)),

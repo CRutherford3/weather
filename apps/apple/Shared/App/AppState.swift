@@ -19,6 +19,8 @@ final class AppState: ObservableObject {
     @Published var center: Place?
     @Published var centerForecast: Forecast?
     @Published var centerAlerts: [WeatherAlert] = []
+    /// Radar split screen: 0 off, 1 linked (both maps move together), 2 independent.
+    @Published var splitMode = 0
     @Published var cardCollapsed: Bool { didSet { UserDefaults.standard.set(cardCollapsed, forKey: "cardCollapsed") } }
     /// True when the home place should track the device location (until the user picks a different place).
     @Published var followMe: Bool { didSet { UserDefaults.standard.set(followMe, forKey: "followMe") } }

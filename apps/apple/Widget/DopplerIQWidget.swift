@@ -88,6 +88,12 @@ enum WidgetWeather {
                     e.days.append((date: Date(timeIntervalSince1970: t[i]), hi: hi[i], lo: lo[i], code: Int(cd[safe: i] ?? 0), rain: Int(pr[safe: i] ?? 0)))
                 }
             }
+            // The hourly list starts at the next full hour, so the reading right now isn't in it.
+            // Count it, otherwise the "high" pill can show a lower number than the current temperature.
+            if let now = e.temp {
+                if e.peak == nil || now >= e.peak!.temp { e.peak = (time: .now, temp: now) }
+                if e.trough == nil || now <= e.trough!.temp { e.trough = (time: .now, temp: now) }
+            }
         } else {
             e.message = "Weather is unavailable right now."
         }
@@ -179,6 +185,11 @@ struct WxProvider: AppIntentTimelineProvider {
 
 // MARK: - Views
 
+/// Where a tap on a widget goes. The app opens its Dashboard for this link.
+enum WidgetLink {
+    static let dashboard = URL(string: "doppleriq://dashboard")!
+}
+
 private let deg: (Double?) -> String = { $0.map { "\(Int($0.rounded()))°" } ?? "--" }
 
 struct WxWidgetView: View {
@@ -206,6 +217,7 @@ struct WxWidgetView: View {
                 }
             }
         }
+        .widgetURL(WidgetLink.dashboard)
         .containerBackground(for: .widget) {
             LinearGradient(colors: e.isDay ? [Color(red: 0.16, green: 0.38, blue: 0.78), Color(red: 0.36, green: 0.6, blue: 0.92)]
                                            : [Color(red: 0.05, green: 0.06, blue: 0.1), Color(red: 0.16, green: 0.17, blue: 0.22)],
@@ -335,6 +347,7 @@ struct DopplerIQWidgets: WidgetBundle {
     var body: some Widget {
         DopplerIQWidget()
         TemperatureWidget()
+        MoreWidgets().body
     }
 }
 
@@ -391,6 +404,7 @@ struct TemperatureView: View {
                 }
             }
         }
+        .widgetURL(WidgetLink.dashboard)
         .containerBackground(for: .widget) {
             LinearGradient(colors: [Color(white: 0.13), Color(white: 0.04)], startPoint: .top, endPoint: .bottom)
         }
@@ -403,8 +417,8 @@ struct TemperatureView: View {
                 Text(e.locationBased && e.place == "My Location" ? "Current Location" : e.place).lineLimit(1)
             }
             .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
-            HStack(spacing: 6) {
-                ring.frame(width: 84, height: 84)
+            HStack(spacing: 4) {
+                ring.frame(width: 80, height: 80)
                 VStack(spacing: 2) {
                     pill(e.peak?.temp ?? hi, warm: true)
                     Text(time(e.peak?.time)).font(.caption2).foregroundStyle(.secondary)
@@ -413,6 +427,7 @@ struct TemperatureView: View {
                     Text(time(e.trough?.time)).font(.caption2).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
+                .layoutPriority(1)
             }
         }
         .foregroundStyle(.white)
@@ -443,13 +458,17 @@ struct TemperatureView: View {
     }
 
     private func pill(_ v: Double, warm: Bool) -> some View {
-        Text(deg(v)).font(.subheadline.weight(.semibold))
-            .padding(.horizontal, 8).padding(.vertical, 2)
+        Text(deg(v))
+            .font(.system(size: 15, weight: .semibold)).monospacedDigit()
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .frame(minWidth: 44)
             .background((warm ? Color(red: 0.98, green: 0.45, blue: 0.3) : Color(red: 0.35, green: 0.62, blue: 1)).opacity(0.35), in: Capsule())
     }
 
     private func time(_ d: Date?) -> String {
         guard let d else { return "" }
+        if abs(d.timeIntervalSinceNow) < 45 * 60 { return "now" }
         let f = DateFormatter(); f.dateFormat = "ha"
         return f.string(from: d).lowercased().replacingOccurrences(of: "m", with: "")   // 3p, 6a
     }

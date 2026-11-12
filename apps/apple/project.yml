@@ -28,6 +28,9 @@ targets:
       properties:
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [io.dialcheck.weather.alerts]
+        CFBundleURLTypes:   # doppleriq://dashboard (widget taps open the Dashboard)
+          - CFBundleURLName: io.dialcheck.weather
+            CFBundleURLSchemes: [doppleriq]
     settings:
       base:
         # Permanent store ID. Holds no app name on purpose, so the name can change later.

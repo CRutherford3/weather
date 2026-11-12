@@ -4,14 +4,25 @@ import SwiftUI
 struct WeatherCard: View {
     @EnvironmentObject var state: AppState
     var onHome: () -> Void
+    /// iPhone: camera, map options, layers and home, shown in the card.
+    var tools: AnyView? = nil
 
     private var place: Place { state.center ?? state.place }
     private var f: Forecast? { state.center != nil ? state.centerForecast : state.forecast }
     private var away: Bool { state.center != nil }
 
     var body: some View {
-        Group {
-            if state.cardCollapsed { pill } else { card }
+        VStack(spacing: 8) {
+            if state.cardCollapsed {
+                pill
+                if let tools {
+                    tools.padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .fixedSize()
+                }
+            } else {
+                card
+            }
         }
         .animation(.snappy, value: state.cardCollapsed)
     }
@@ -77,6 +88,10 @@ struct WeatherCard: View {
                 }
             } else {
                 ProgressView().frame(height: 70)
+            }
+            if let tools {
+                Divider()
+                tools
             }
         }
         .padding(14)

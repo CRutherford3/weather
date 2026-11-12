@@ -43,13 +43,14 @@ struct TileSource {
 
 /// Map layers the app can draw. Mirrors the website's layer list and plan levels.
 enum MapLayer: String, CaseIterable, Identifiable {
-    case radar, sites, satIR, satVis, satWV, satColor, lightning, rainRate, rain, rain72, echoTops
+    case radar, sites, satIR, satVis, satWV, satColor, lightning, rainRate, rain1h, rain, rain72, echoTops, tempMap
     case warnings, spc, mcd, lsr, hail
-    case fronts, temps, winds, road, aqi
+    case fronts, temps, winds, windFlow, road, aqi
     case hurricanes, twoutlook, windprob, surge
     case snowdepth, snowprob
     case buoys, cams, waves, sst, charts
     case traffic, aviation, iss, outages, avalanche, drought, quakes, fires
+    case sigmets, airmets, tfrs, vfrChart
 
     var id: String { rawValue }
 
@@ -63,6 +64,8 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .satColor: return "Clouds: True Color"
         case .lightning: return "Lightning"
         case .rainRate: return "Rain Rate (now)"
+        case .rain1h: return "Rain (past hour)"
+        case .tempMap: return "Temperature Map"
         case .echoTops: return "Echo Tops (storm height)"
         case .road: return "Road Weather (estimated)"
         case .rain: return "Rain Totals (24 hr)"
@@ -75,6 +78,7 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .fronts: return "Fronts & Pressure"
         case .temps: return "Temperatures"
         case .winds: return "Winds"
+        case .windFlow: return "Wind Animation"
         case .aqi: return "Air Quality"
         case .hurricanes: return "Hurricane Tracker"
         case .twoutlook: return "Tropical Development Areas"
@@ -95,35 +99,39 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .drought: return "Droughts"
         case .quakes: return "Earthquakes"
         case .fires: return "Wildfires"
+        case .sigmets: return "SIGMETs"
+        case .airmets: return "AIRMETs"
+        case .tfrs: return "Temporary Flight Restrictions"
+        case .vfrChart: return "VFR Sectional Chart"
         }
     }
 
     var group: LayerGroup {
         switch self {
-        case .radar, .sites, .satIR, .satVis, .satWV, .satColor, .lightning, .rainRate, .rain, .rain72, .echoTops: return .radarSat
+        case .radar, .sites, .satIR, .satVis, .satWV, .satColor, .lightning, .rainRate, .rain1h, .rain, .rain72, .echoTops, .tempMap: return .radarSat
         case .warnings, .spc, .mcd, .lsr, .hail: return .severe
-        case .fronts, .temps, .winds, .road, .aqi: return .conditions
+        case .fronts, .temps, .winds, .windFlow, .road, .aqi: return .conditions
         case .hurricanes, .twoutlook, .windprob, .surge: return .tropics
         case .snowdepth, .snowprob, .avalanche: return .snow
         case .buoys, .cams, .waves, .sst, .charts: return .marine
-        case .traffic, .aviation, .iss, .outages, .drought, .quakes, .fires: return .more
+        case .traffic, .aviation, .iss, .outages, .drought, .quakes, .fires, .sigmets, .airmets, .tfrs, .vfrChart: return .more
         }
     }
 
     /// Plan needed (same levels as the website). The Radar Pack unlocks every layer.
     var tier: Plan {
         switch self {
-        case .lightning, .rainRate, .echoTops, .road, .rain, .rain72, .hail, .temps, .winds, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation:
+        case .lightning, .rainRate, .rain1h, .echoTops, .road, .rain, .rain72, .hail, .temps, .winds, .windFlow, .aqi, .hurricanes, .twoutlook, .windprob, .surge, .snowprob, .drought, .aviation, .sigmets, .airmets, .tfrs:
             return .plus
-        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages, .sites, .iss:
+        case .sst, .charts, .buoys, .cams, .waves, .traffic, .outages, .sites, .iss, .vfrChart:
             return .pro
         default:
             return .free
         }
     }
 
-    /// Opened by the one-time Pro Radar Pack (Doppler tools only).
-    var inRadarPack: Bool { self == .sites }
+    /// Opened by the one-time Pro Radar Pack: every radar layer, nothing else.
+    var inRadarPack: Bool { [.sites, .echoTops, .rainRate, .rain1h, .rain, .rain72].contains(self) }
     /// Shown in the Pro group (Professional Radar, Marine & Space) instead of its normal group.
     var isProRadar: Bool { self == .sites || isMarineSpace }
     var isMarineSpace: Bool { [.buoys, .cams, .waves, .sst, .charts, .iss].contains(self) }
@@ -161,6 +169,9 @@ enum MapLayer: String, CaseIterable, Identifiable {
             let f = DateFormatter(); f.dateFormat = "yyyyMMddHHmm"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
             return TileSource(template: "https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/mrms::a2m-\(f.string(from: t))/{z}/{x}/{y}.png", nativeMaxZ: 10, opacity: 0.8)
         case .echoTops: return TileSource(template: "\(iem)/nexrad-eet/{z}/{x}/{y}.png?_=\(b5)", nativeMaxZ: 10, opacity: 0.75)
+        case .rain1h: return TileSource(template: "\(iem)/q2-n1p-900913/{z}/{x}/{y}.png?_=\(b5)", nativeMaxZ: 10, opacity: 0.7)
+        // NWS NDFD forecast temperature (NOAA map service)
+        case .tempMap: return TileSource(template: ags("raster/rest/services/NDFD/NDFD_temp/MapServer", nil, b3h), nativeMaxZ: 20, opacity: 0.6)
         case .rain72: return TileSource(template: "\(iem)/q2-p72h-900913/{z}/{x}/{y}.png?_=\(b10)", nativeMaxZ: 10, opacity: 0.7)
         case .hurricanes: return TileSource(template: ags("tropical/rest/services/tropical/NHC_tropical_weather/MapServer", nil, b30), nativeMaxZ: 20, opacity: 0.9, above: true)
         case .twoutlook: return TileSource(template: ags("tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer", "1,2,3,33", b30), nativeMaxZ: 20, opacity: 0.85, above: true)
@@ -169,6 +180,8 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .snowdepth: return TileSource(template: ags("raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer", "0", b3h), nativeMaxZ: 20, opacity: 0.7)
         case .snowprob: return TileSource(template: ags("vector/rest/services/precip/wpc_prob_winter_precip/MapServer", "1", b2h), nativeMaxZ: 20, opacity: 0.7)
         case .sst: return TileSource(template: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GHRSST_L4_MUR_Sea_Surface_Temperature/default/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png?_=\(Int(now / 21600))", nativeMaxZ: 7, opacity: 0.75)
+        // FAA VFR sectional charts (FAA AIS tile service)
+        case .vfrChart: return TileSource(template: "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}", nativeMaxZ: 12, opacity: 1)
         case .charts: return TileSource(template: "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image", nativeMaxZ: 20, opacity: 1)
         default: return nil
         }
@@ -188,6 +201,9 @@ enum MapLayer: String, CaseIterable, Identifiable {
         case .fires: s = ["https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0/query?where=IncidentSize%3E%3D100&outFields=IncidentName,IncidentSize,PercentContained&f=geojson"]
         case .outages: s = ["https://openenergyhub.ornl.gov/api/explore/v2.1/catalog/datasets/odin-real-time-outages-county/exports/geojson?select=county%2Cstate%2Cmetersaffected%2Cgeom"]
         case .avalanche: s = ["https://api.avalanche.org/v2/public/products/map-layer"]
+        case .sigmets: s = ["https://aviationweather.gov/api/data/airsigmet?format=geojson"]
+        case .airmets: s = ["https://aviationweather.gov/api/data/gairmet?format=geojson"]
+        case .tfrs: s = ["https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=500&outputFormat=application/json&srsname=EPSG:4326"]
         default: s = []
         }
         return s.compactMap(URL.init(string:))
@@ -431,25 +447,86 @@ final class RadarImageRenderer: MKOverlayRenderer {
 
 /// Map background. Auto picks Dark or Light from the app's appearance.
 enum Basemap: String, CaseIterable, Identifiable {
-    case auto, dark, light, apple, satellite
+    case auto, dark, light, roads, aerial, topo, proDark, proLight, vfr, apple, satellite
     var id: String { rawValue }
     var title: String {
         switch self {
         case .auto: return "Auto"
-        case .dark: return "Dark"
-        case .light: return "Light"
+        case .dark: return "Grayscale"
+        case .light: return "Daylight"
+        case .roads: return "Roads"
+        case .aerial: return "Aerial"
+        case .topo: return "Topography"
+        case .proDark: return "Pro Dark"
+        case .proLight: return "Pro Light"
+        case .vfr: return "VFR Sectional"
         case .apple: return "Apple"
-        case .satellite: return "Satellite"
+        case .satellite: return "Apple Satellite"
         }
     }
+    /// Plan needed for this background.
+    var tier: Plan { self == .vfr ? .pro : .free }
+    /// Light backgrounds get dark borders.
+    var isLight: Bool { [.light, .roads, .topo, .proLight, .vfr].contains(self) }
+
     private static let esri = "https://services.arcgisonline.com/ArcGIS/rest/services"
-    /// Black-and-gray (or light gray) base with the place names drawn above the radar, like MyRadar.
-    var tiles: (base: String, labels: String)? {
+    private static let carto = "https://basemaps.cartocdn.com"
+    /// Background tiles, and place names drawn above the radar when the background has them separately.
+    var tiles: (base: String, labels: String?, maxZ: Int)? {
         switch self {
-        case .dark: return ("\(Self.esri)/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
-        case .light: return ("\(Self.esri)/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
+        case .dark: return ("\(Self.esri)/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", 16)
+        case .light: return ("\(Self.esri)/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}", 16)
+        case .roads: return ("\(Self.esri)/World_Street_Map/MapServer/tile/{z}/{y}/{x}", nil, 18)
+        case .aerial: return ("\(Self.esri)/World_Imagery/MapServer/tile/{z}/{y}/{x}", "\(Self.esri)/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", 18)
+        case .topo: return ("\(Self.esri)/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", nil, 18)
+        case .proDark: return ("\(Self.carto)/dark_nolabels/{z}/{x}/{y}.png", "\(Self.carto)/dark_only_labels/{z}/{x}/{y}.png", 18)
+        case .proLight: return ("\(Self.carto)/light_nolabels/{z}/{x}/{y}.png", "\(Self.carto)/light_only_labels/{z}/{x}/{y}.png", 18)
+        case .vfr: return ("https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}", nil, 12)
         default: return nil
         }
+    }
+    /// Roads drawn over backgrounds that don't have their own.
+    static let roadsOverlay = "\(esri)/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+
+    /// A small sample of the background (Southeast US) for the picker.
+    var thumb: URL? {
+        guard let t = tiles?.base else { return nil }
+        let (z, x, y) = self == .vfr ? (9, 135, 204) : (5, 8, 12)
+        return URL(string: t.replacingOccurrences(of: "{z}", with: "\(z)").replacingOccurrences(of: "{x}", with: "\(x)").replacingOccurrences(of: "{y}", with: "\(y)"))
+    }
+}
+
+// MARK: - US borders
+
+/// Our own US outline, state lines and county lines (US Census county shapes, built into the app's
+/// asset catalog). Drawn by the app so they can be styled and faded with zoom, instead of relying on
+/// the faint lines baked into the map tiles. Loaded once and shared by every map.
+enum USBorders {
+    /// US land borders with Canada and Mexico (thick).
+    static let nation = load("USNation")
+    /// US coastline (thinner than the land borders).
+    static let coast = load("USCoast")
+    /// Other countries' borders, and their states and provinces.
+    static let world = load("WorldBorders")
+    static let provinces = load("WorldProvinces")
+    static let states = load("USStates")
+    static let counties = load("USCounties")
+
+    /// Each file is a list of lines, each line a flat [lon, lat, lon, lat, ...] list.
+    private static func load(_ name: String) -> MKMultiPolyline {
+        guard let d = NSDataAsset(name: name)?.data,
+              let lines = try? JSONSerialization.jsonObject(with: d) as? [[Double]] else { return MKMultiPolyline([]) }
+        return MKMultiPolyline(lines.map { l in
+            var pts = [CLLocationCoordinate2D](); pts.reserveCapacity(l.count / 2)
+            var i = 0
+            while i + 1 < l.count { pts.append(CLLocationCoordinate2D(latitude: l[i + 1], longitude: l[i])); i += 2 }
+            return MKPolyline(coordinates: pts, count: pts.count)
+        })
+    }
+
+    /// County lines appear as you zoom in to about state level: hidden past ~9 degrees tall, full by ~4.
+    static func countyAlpha(_ latDelta: Double) -> CGFloat {
+        CGFloat(min(1, max(0, (9 - latDelta) / 5)))
     }
 }
 
@@ -461,6 +538,8 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     @Published var frames: [RadarService.Frame] = []
     @Published var index = 0
     @Published var playing = true
+    /// Split screen: this loop doesn't advance on its own; it follows the other radar's time.
+    var follower = false
     @Published var layers: Set<MapLayer> {
         didSet { if persist { UserDefaults.standard.set(layers.map(\.rawValue), forKey: "mapLayers") } }
     }
@@ -478,6 +557,10 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     @Published private(set) var mode: RadarMode = .recent
     /// Showing one Doppler radar instead of the US mosaic (nil = Hi-Def mosaic).
     @Published private(set) var site: RadarService.Site?
+    /// What the map is showing, for overlays drawn on top of it (wind animation).
+    let viewport = MapViewport()
+    /// Takes a picture of the map (set by the map view).
+    var snapshot: (() -> CGImage?)?
     /// Set by the map: whether a frame's image has finished downloading.
     var isReady: ((Int) -> Bool)?
     private var waits = 0
@@ -540,7 +623,7 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: mode == .history ? 0.15 : 0.5, repeats: true) { [weak self] _ in
-            guard let self, self.playing, !self.frames.isEmpty else { return }
+            guard let self, self.playing, !self.follower, !self.frames.isEmpty else { return }
             // pause briefly on the latest frame
             if self.index == self.frames.count - 1 && Int(Date().timeIntervalSince1970 * 2) % 4 != 0 { return }
             // future radar: pause on "now" too
@@ -554,6 +637,13 @@ final class RadarController: ObservableObject, @unchecked Sendable {
     }
 
     var currentTime: Date? { frames.indices.contains(index) ? frames[index].time : nil }
+
+    /// Jump to the frame closest to a time (split screen keeps both radars on the same moment).
+    func show(time: Date?) {
+        guard let time, !frames.isEmpty else { return }
+        let best = frames.indices.min { abs(frames[$0].time.timeIntervalSince(time)) < abs(frames[$1].time.timeIntervalSince(time)) } ?? index
+        if best != index { index = best }
+    }
     var currentIsFuture: Bool { frames.indices.contains(index) && frames[index].future }
 }
 
@@ -574,6 +664,10 @@ struct RadarMap: PlatformViewRepresentable {
     var onCamera: ((String, URL) -> Void)? = nil
     /// Tapped a radar site on the Doppler layer.
     var onSite: ((RadarService.Site) -> Void)? = nil
+    /// Tapped a county on the Power Outages layer.
+    var onOutage: ((OutageArea) -> Void)? = nil
+    /// Split screen: maps that pan and zoom together.
+    var sync: MapSync? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -592,6 +686,19 @@ struct RadarMap: PlatformViewRepresentable {
         m.showsUserLocation = true
         m.setRegion(MKCoordinateRegion(center: center, span: .init(latitudeDelta: 6, longitudeDelta: 6)), animated: false)
         context.coordinator.map = m
+        radar.snapshot = { [weak m] in m.flatMap { RadarMap.capture($0) } }
+        sync?.add(m)
+        // taps on shapes (power outage counties); annotations and map gestures still work
+        #if os(iOS)
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.mapTapped(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        m.addGestureRecognizer(tap)
+        #else
+        let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.mapTapped(_:)))
+        click.delaysPrimaryMouseButtonEvents = false
+        m.addGestureRecognizer(click)
+        #endif
         return m
     }
 
@@ -628,6 +735,10 @@ struct RadarMap: PlatformViewRepresentable {
         // map background
         private var shownBasemap = ""
         private var baseOverlays: [WxTileOverlay] = []
+        private var labelsOverlay: WxTileOverlay?
+        private var borderOverlays: [MKOverlay] = []
+        private weak var countyRenderer: MKOverlayRenderer?
+        private var countyShown: CGFloat = -1
 
         // other tile layers
         private var tileOverlays: [MapLayer: WxTileOverlay] = [:]
@@ -639,6 +750,7 @@ struct RadarMap: PlatformViewRepresentable {
         private var geoPoints: [MapLayer: [WxPoint]] = [:]
         private var geoLoading: Set<MapLayer> = []
         private var shapes: [ObjectIdentifier: GeoStyle] = [:]
+        private var outageInfo: [ObjectIdentifier: OutageArea] = [:]
         private var viewWork: DispatchWorkItem?
         private var issTimer: Timer?
 
@@ -659,25 +771,121 @@ struct RadarMap: PlatformViewRepresentable {
             guard let map else { return }
             var b = parent.radar.basemap
             if b == .auto { b = dark ? .dark : .light }
-            let key = "\(b.rawValue)"
+            let showBorders = UserDefaults.standard.object(forKey: "mapBorders") as? Bool ?? true
+            let showCounties = UserDefaults.standard.object(forKey: "mapCounties") as? Bool ?? true
+            let showLabels = UserDefaults.standard.object(forKey: "mapLabels") as? Bool ?? true
+            let showRoads = UserDefaults.standard.object(forKey: "mapRoads") as? Bool ?? false
+            let key = "\(b.rawValue)-\(dark)-\(showBorders)-\(showCounties)-\(showLabels)-\(showRoads)"
             guard key != shownBasemap else { return }
             shownBasemap = key
             map.removeOverlays(baseOverlays); baseOverlays = []
+            map.removeOverlays(borderOverlays); borderOverlays = []
             switch b {
             case .satellite:
                 map.preferredConfiguration = MKHybridMapConfiguration(elevationStyle: .flat)
+            case _ where b.tiles != nil:
+                // Dark and Light draw their own place names, so use Apple's label-free imagery underneath.
+                // (Apple's standard map kept drawing its city names too, which is why names showed up twice.)
+                map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .flat)
             default:
                 map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
             }
+            labelsOverlay = nil
             if let t = b.tiles {
-                let base = WxTileOverlay(TileSource(template: t.base, nativeMaxZ: 16, opacity: 1))
+                let base = WxTileOverlay(TileSource(template: t.base, nativeMaxZ: t.maxZ, opacity: 1))
                 base.canReplaceMapContent = true
-                let labels = WxTileOverlay(TileSource(template: t.labels, nativeMaxZ: 16, opacity: 1))
-                tileOpacity[ObjectIdentifier(base)] = 1; tileOpacity[ObjectIdentifier(labels)] = 1
+                tileOpacity[ObjectIdentifier(base)] = 1
                 map.insertOverlay(base, at: 0, level: .aboveRoads)
-                map.addOverlay(labels, level: .aboveLabels)
-                baseOverlays = [base, labels]
+                baseOverlays = [base]
+                if showLabels, let l = t.labels {
+                    let labels = WxTileOverlay(TileSource(template: l, nativeMaxZ: t.maxZ, opacity: 1))
+                    tileOpacity[ObjectIdentifier(labels)] = 1
+                    map.addOverlay(labels, level: .aboveLabels)
+                    baseOverlays.append(labels)
+                    labelsOverlay = labels
+                }
+                // roads over the radar, for backgrounds without their own
+                if showRoads, ![.roads, .topo, .vfr].contains(b) {
+                    let roads = WxTileOverlay(TileSource(template: Basemap.roadsOverlay, nativeMaxZ: 18, opacity: 1))
+                    tileOpacity[ObjectIdentifier(roads)] = b.isLight ? 0.8 : 0.55
+                    if let l = labelsOverlay { map.insertOverlay(roads, below: l) } else { map.addOverlay(roads, level: .aboveLabels) }
+                    baseOverlays.append(roads)
+                }
             }
+            addBorders(map, light: b.isLight || (b == .apple && !dark), borders: showBorders, counties: showCounties)
+        }
+
+        /// County, state and national lines, drawn above the radar and just under the place names.
+        private func addBorders(_ map: MKMapView, light: Bool, borders: Bool, counties: Bool) {
+            let ink: PColor = light ? .black : .white
+            let styles: [(MKMultiPolyline, CGFloat, CGFloat)] = [
+                (USBorders.provinces, light ? 0.40 : 0.45, 1.0),
+                (USBorders.counties, light ? 0.22 : 0.20, 0.5),
+                (USBorders.states, light ? 0.55 : 0.60, 1.3),
+                (USBorders.world, light ? 0.65 : 0.70, 1.8),
+                (USBorders.coast, light ? 0.50 : 0.55, 1.0),
+                (USBorders.nation, light ? 0.70 : 0.75, 2.4),
+            ]
+            for (o, a, w) in styles {
+                if (o === USBorders.counties) ? !counties : !borders { continue }
+                shapes[ObjectIdentifier(o)] = GeoStyle(stroke: ink.withAlphaComponent(a), fill: .clear, fillAlpha: 0, width: w, dashed: false)
+                if let labels = labelsOverlay { map.insertOverlay(o, below: labels) } else { map.addOverlay(o, level: .aboveLabels) }
+                borderOverlays.append(o)
+            }
+            countyShown = -1
+        }
+
+        /// Fade county lines in and out with the zoom.
+        private func updateCounties(_ m: MKMapView) {
+            guard let r = countyRenderer else { return }
+            let a = USBorders.countyAlpha(m.region.span.latitudeDelta)
+            guard abs(a - countyShown) > 0.02 || (a == 0) != (countyShown == 0) else { return }
+            countyShown = a
+            r.alpha = a
+            r.setNeedsDisplay()
+        }
+
+        /// Tap on the map: open the power outage details for the county under the finger.
+        #if os(iOS)
+        @objc func mapTapped(_ g: UITapGestureRecognizer) { tapped(g.location(in: map)) }
+        #else
+        @objc func mapTapped(_ g: NSClickGestureRecognizer) { tapped(g.location(in: map)) }
+        #endif
+
+        private func tapped(_ pt: CGPoint) {
+            guard let map, parent.radar.layers.contains(.outages), let polys = geoOverlays[.outages] else { return }
+            let p = MKMapPoint(map.convert(pt, toCoordinateFrom: map))
+            for o in polys where Self.hit(o, p) {
+                if let info = outageInfo[ObjectIdentifier(o)] { parent.onOutage?(info); return }
+            }
+        }
+
+        private static func hit(_ o: MKOverlay, _ p: MKMapPoint) -> Bool {
+            guard o.boundingMapRect.contains(p) else { return false }
+            if let poly = o as? MKPolygon { return inside(poly, p) }
+            if let multi = o as? MKMultiPolygon { return multi.polygons.contains { inside($0, p) } }
+            return false
+        }
+
+        private static func inside(_ poly: MKPolygon, _ p: MKMapPoint) -> Bool {
+            let pts = poly.points(), n = poly.pointCount
+            guard n > 2 else { return false }
+            var hit = false
+            var j = n - 1
+            for i in 0..<n {
+                let a = pts[i], b = pts[j]
+                if (a.y > p.y) != (b.y > p.y), p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { hit.toggle() }
+                j = i
+            }
+            if hit, let holes = poly.interiorPolygons, holes.contains(where: { inside($0, p) }) { return false }
+            return hit
+        }
+
+        func mapViewDidChangeVisibleRegion(_ m: MKMapView) {
+            parent.sync?.moved(m)
+            updateCounties(m)
+            parent.radar.viewport.rect = m.visibleMapRect
+            parent.radar.viewport.size = m.bounds.size
         }
 
         func syncOverlays() {
@@ -714,7 +922,9 @@ struct RadarMap: PlatformViewRepresentable {
                     let o = WxTileOverlay(src)
                     tileOverlays[layer] = o
                     tileOpacity[ObjectIdentifier(o)] = src.opacity
-                    if src.above { map.addOverlay(o, level: .aboveLabels) } else { map.insertOverlay(o, at: 0, level: .aboveRoads) }
+                    if src.above { map.addOverlay(o, level: .aboveLabels) }
+                    else if let base = baseOverlays.first { map.insertOverlay(o, above: base) }   // just above the base map, under the radar
+                    else { map.insertOverlay(o, at: 0, level: .aboveRoads) }
                 } else if !want, let o = tileOverlays[layer] {
                     map.removeOverlay(o)
                     tileOverlays[layer] = nil
@@ -723,7 +933,7 @@ struct RadarMap: PlatformViewRepresentable {
             }
 
             // shape and point layers
-            for layer in MapLayer.allCases where layer.tiles == nil && layer != .radar && layer != .traffic {
+            for layer in MapLayer.allCases where layer.tiles == nil && layer != .radar && layer != .traffic && layer != .windFlow {
                 let want = L.contains(layer)
                 let have = geoOverlays[layer] != nil || geoPoints[layer] != nil
                 if want, !have, !geoLoading.contains(layer) {
@@ -1010,11 +1220,17 @@ struct RadarMap: PlatformViewRepresentable {
                 guard let data = await Self.get(url), let objs = try? MKGeoJSONDecoder().decode(data) else { continue }
                 for case let f as MKGeoJSONFeature in objs {
                     let p = Self.props(f)
+                    // G-AIRMETs come as snapshots every 3 hours; show the current one
+                    if layer == .airmets, p["forecast"] != nil, Self.str(p["forecast"]) != "0" { continue }
                     for g in f.geometry {
                         if let pt = g as? MKPointAnnotation {
                             if let w = Self.point(layer, p, pt.coordinate) { points.append(w) }
                         } else if let o = g as? MKOverlay {
                             shapes[ObjectIdentifier(o)] = Self.shape(layer, p)
+                            if layer == .outages {
+                                outageInfo[ObjectIdentifier(o)] = OutageArea(county: Self.str(p["county"]), state: Self.str(p["state"]),
+                                                                             affected: Int(Self.num(p["metersaffected"]) ?? 0))
+                            }
                             overlays.append(o)
                         }
                     }
@@ -1167,7 +1383,13 @@ struct RadarMap: PlatformViewRepresentable {
                 put(.aviation, [], Array(pts.prefix(400)))
                 return
             }
-            let grid = Self.grid(r, cols: 6, rows: 8)
+            var area = r
+            if layer == .road, (UserDefaults.standard.string(forKey: "roadView") ?? "radius") == "radius" {
+                let dLat = 60 / 69.0
+                area = MKCoordinateRegion(center: parent.center, span: .init(latitudeDelta: dLat * 2,
+                                          longitudeDelta: dLat * 2 / max(0.2, cos(parent.center.latitude * .pi / 180))))
+            }
+            let grid = Self.grid(area, cols: layer == .road ? 7 : 6, rows: 8)
             let lats = grid.map { String(format: "%.3f", $0.latitude) }.joined(separator: ",")
             let lons = grid.map { String(format: "%.3f", $0.longitude) }.joined(separator: ",")
             if layer == .road {
@@ -1292,6 +1514,15 @@ struct RadarMap: PlatformViewRepresentable {
                 let n = num(p["metersaffected"]) ?? 0
                 let c = PColor.hex(n < 50 ? "#fde68a" : n < 250 ? "#fbbf24" : n < 1000 ? "#f97316" : n < 5000 ? "#dc2626" : "#7f1d1d")
                 return GeoStyle(stroke: .hex("#92400e"), fill: c, fillAlpha: 0.55, width: 0.6, dashed: false)
+            case .sigmets, .airmets:
+                let h = (str(p["hazard"]) + " " + str(p["airSigmetType"])).uppercased()
+                let hex = h.contains("CONVECTIVE") ? "#ef4444" : h.contains("TURB") ? "#f59e0b" : h.contains("ICE") || h.contains("FZLVL") ? "#22d3ee"
+                    : h.contains("IFR") ? "#a855f7" : h.contains("MT") || h.contains("MTN") ? "#a16207" : h.contains("ASH") ? "#9ca3af" : h.contains("WND") || h.contains("LLWS") ? "#84cc16" : "#f472b6"
+                let c = PColor.hex(hex)
+                return GeoStyle(stroke: c, fill: c, fillAlpha: layer == .sigmets ? 0.18 : 0.08, width: layer == .sigmets ? 2 : 1.5, dashed: layer == .airmets)
+            case .tfrs:
+                let c = PColor.hex("#ef4444")
+                return GeoStyle(stroke: c, fill: c, fillAlpha: 0.15, width: 1.8, dashed: false)
             case .avalanche:
                 let c = PColor.hex(str(p["color"]))
                 return GeoStyle(stroke: c, fill: c, fillAlpha: 0.45, width: 1, dashed: false)
@@ -1427,6 +1658,12 @@ struct RadarMap: PlatformViewRepresentable {
             r.fillColor = s.fill.withAlphaComponent(s.fillAlpha)
             r.lineWidth = s.width
             if s.dashed { r.lineDashPattern = [6, 4] }
+            if overlay === USBorders.counties {
+                countyRenderer = r
+                countyShown = USBorders.countyAlpha(m.region.span.latitudeDelta)
+                r.alpha = countyShown
+            }
+            if borderOverlays.contains(where: { $0 === overlay }) { r.lineJoin = .round; r.lineCap = .round }
             return r
         }
 
@@ -1490,6 +1727,9 @@ struct RadarMap: PlatformViewRepresentable {
         }
 
         func mapView(_ m: MKMapView, regionDidChangeAnimated animated: Bool) {
+            parent.radar.viewport.rect = m.visibleMapRect
+            parent.radar.viewport.size = m.bounds.size
+            parent.radar.viewport.settled += 1
             parent.onCenterChange(m.centerCoordinate)
             // redraw the layers that depend on the area in view, once the map settles
             viewWork?.cancel()
@@ -1640,5 +1880,34 @@ struct Crosshair: View {
         .foregroundStyle(.white)
         .shadow(color: .black.opacity(0.6), radius: 2)
         .allowsHitTesting(false)
+    }
+}
+
+#if os(iOS)
+extension RadarMap.Coordinator: UIGestureRecognizerDelegate {
+    /// Let the outage tap work alongside the map's own gestures.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+#endif
+
+/// Keeps split-screen maps looking at the same spot: moving one moves the others.
+final class MapSync {
+    /// Off = each map moves on its own.
+    var linked = true
+    private var maps: [WeakMap] = []
+    private var applying = false
+    private struct WeakMap { weak var map: MKMapView? }
+
+    func add(_ m: MKMapView) {
+        maps.removeAll { $0.map == nil }
+        if let lead = maps.first?.map { m.setCamera(lead.camera, animated: false) }
+        maps.append(WeakMap(map: m))
+    }
+
+    func moved(_ m: MKMapView) {
+        guard linked, !applying else { return }
+        applying = true
+        for w in maps { if let o = w.map, o !== m { o.setCamera(m.camera, animated: false) } }
+        applying = false
     }
 }

@@ -57,8 +57,6 @@ enum AlertMonitor {
 
     // MARK: the check
 
-    private static let severe = try! NSRegularExpression(pattern: "Tornado|Severe Thunderstorm|Flash Flood|Hurricane|Tropical Storm|Storm Surge|Extreme Wind|Blizzard|Ice Storm|Winter Storm Warning|Extreme Heat Warning|Extreme Cold Warning|Special Marine")
-
     private static func places() -> [Place] {
         func load<T: Decodable>(_ k: String) -> T? { d.data(forKey: k).flatMap { try? JSONDecoder().decode(T.self, from: $0) } }
         var out: [Place] = []
@@ -82,8 +80,10 @@ enum AlertMonitor {
                   let feats = j["features"] as? [[String: Any]] else { continue }
             for f in feats {
                 guard let pr = f["properties"] as? [String: Any], let id = pr["id"] as? String, let ev = pr["event"] as? String,
-                      !seen.contains(id), severe.firstMatch(in: ev, range: NSRange(ev.startIndex..., in: ev)) != nil else { continue }
+                      !seen.contains(id), AlertPrefs.wants(ev) else { continue }
                 seen.insert(id)
+                // quiet hours: only life-threatening warnings come through
+                if AlertPrefs.isQuiet(), !AlertPrefs.breakThrough.contains(ev) { continue }
                 let body = (pr["headline"] as? String) ?? String(((pr["description"] as? String) ?? "").prefix(160))
                 await post(id: id, title: "\(ev) · \(p.name)", body: body, critical: ev.contains("Tornado") || ev.contains("Flash Flood Emergency"))
             }
@@ -94,17 +94,19 @@ enum AlertMonitor {
 
     /// One heads-up per dry spell when rain is expected within 45 minutes.
     private static func rainSoon(_ p: Place) async {
+        let level = AlertPrefs.rainLevel
+        guard level != .off, !AlertPrefs.isQuiet() else { return }
         guard let url = URL(string: String(format: "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f&minutely_15=precipitation&forecast_minutely_15=4&past_minutely_15=1", p.lat, p.lon)),
               let data = try? await URLSession.shared.data(from: url).0,
               let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let m = j["minutely_15"] as? [String: Any], let pr = (m["precipitation"] as? [Any])?.map({ ($0 as? NSNumber)?.doubleValue ?? 0 }),
               !pr.isEmpty else { return }
-        let now = pr[0], soon = pr.dropFirst().firstIndex { $0 >= 0.1 }
+        let now = pr[0], soon = pr.dropFirst().firstIndex { $0 >= level.threshold }
         let warned = d.bool(forKey: "rainWarned")
-        if now < 0.1, let soon, !warned {
+        if now < level.threshold, let soon, !warned {
             await post(id: "rain", title: "Rain starting soon · \(p.name)", body: "Rain is expected within about \(soon * 15) minutes.", critical: false)
             d.set(true, forKey: "rainWarned")
-        } else if now < 0.1, soon == nil {
+        } else if now < level.threshold, soon == nil {
             d.set(false, forKey: "rainWarned")
         }
     }

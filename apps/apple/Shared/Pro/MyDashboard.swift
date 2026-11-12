@@ -256,6 +256,7 @@ struct MyDashboard: View {
                     ForEach(dash.page.widgets) { w in
                         WidgetCard(widget: w, bust: bust)
                             .layoutValue(key: TileSizeKey.self, value: w.size.code)
+                            .layoutValue(key: TileStretchKey.self, value: w.kind == "doppler" || w.kind == "radar")
                             .draggable(w.id.uuidString) {
                                 Label(DashStore.title(w), systemImage: "square.grid.2x2")
                                     .padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -418,7 +419,7 @@ struct WidgetCard: View {
             } else if let v = live(l) {
                 v
             } else if l == .radar {
-                MiniRadar().frame(height: widget.size == .large ? 340 : 240).clipShape(RoundedRectangle(cornerRadius: 12))
+                MiniRadar().frame(minHeight: widget.size == .large ? 340 : 240, maxHeight: .infinity).clipShape(RoundedRectangle(cornerRadius: 12))
             } else if l == .alerts {
                 alerts
             } else if let f = state.forecast {
@@ -461,7 +462,7 @@ struct WidgetCard: View {
         case .nwsloop: return AnyView(NWSLoopWidget(place: p))
         case .doppler:
             return AnyView(DopplerWidget(place: p, saved: widget.customURL, onPick: { DashStore.shared.setCustom(widget.id, $0) })
-                .frame(height: widget.size == .full || widget.size == .large ? 400 : 300))
+                .frame(minHeight: widget.size == .full || widget.size == .large ? 400 : 300, maxHeight: .infinity))
         case .nwstext: return AnyView(NWSTextWidget(place: p))
         case .afd: return AnyView(AFDWidget(place: p))
         case .models: return AnyView(ModelsWidget(place: p, units: state.units))
@@ -764,6 +765,8 @@ struct WidgetCatalog: View {
 // MARK: - Grid like the website's (12 columns: small 3, medium 4, large 6, full 12)
 
 struct TileSizeKey: LayoutValueKey { static let defaultValue = 1 }
+/// Live radar tiles can grow taller to line up with the tiles beside them.
+struct TileStretchKey: LayoutValueKey { static let defaultValue = false }
 
 /// Tiles flow left to right and wrap, each spanning columns by size. Narrower screens use wider spans,
 /// the same breakpoints as the website. Each tile is as tall as its content (no empty stretched cards).
@@ -776,29 +779,52 @@ struct DashGridLayout: Layout {
         return 12
     }
 
-    /// Rows of (subview index, x, width), plus each row's height. A row that doesn't use all 12 columns is
-    /// widened to fill the screen, keeping the tiles' proportions, so there's no empty strip at the end.
-    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [(items: [(Int, CGFloat, CGFloat)], height: CGFloat)] {
-        var groups: [[(Int, Int)]] = [], cur: [(Int, Int)] = [], used = 0
-        for (i, sv) in subviews.enumerated() {
-            let sp = span(sv[TileSizeKey.self], width)
-            if used + sp > 12, !cur.isEmpty { groups.append(cur); cur = []; used = 0 }
-            cur.append((i, sp)); used += sp
-        }
-        if !cur.isEmpty { groups.append(cur) }
-        return groups.map { g in
+    /// Rows of tiles: (subview, x, y offset, width, height to fill or nil), plus each row's height. A row that
+    /// doesn't use all 12 columns is widened to fill the screen, keeping the tiles' proportions.
+    /// When a tile is much shorter than the tallest one in its row (a map beside a big radar), the next tile is
+    /// tucked into the space under it, and live radar tiles stretch to match, so rows have no dead space.
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [(items: [(Int, CGFloat, CGFloat, CGFloat, CGFloat?)], height: CGFloat)] {
+        var queue = Array(subviews.indices)
+        var rows: [(items: [(Int, CGFloat, CGFloat, CGFloat, CGFloat?)], height: CGFloat)] = []
+        func h(_ i: Int, _ w: CGFloat) -> CGFloat { subviews[i].sizeThatFits(ProposedViewSize(width: w, height: nil)).height }
+        func sp(_ i: Int) -> Int { span(subviews[i][TileSizeKey.self], width) }
+        while !queue.isEmpty {
+            var g: [(Int, Int)] = [], used = 0
+            while let i = queue.first {
+                if used + sp(i) > 12, !g.isEmpty { break }
+                g.append((i, sp(i))); used += sp(i); queue.removeFirst()
+            }
             let total = CGFloat(g.reduce(0) { $0 + $1.1 })
             let free = width - spacing * CGFloat(g.count - 1)
-            var x: CGFloat = 0, h: CGFloat = 0
-            var items: [(Int, CGFloat, CGFloat)] = []
-            for (i, sp) in g {
-                let w = free * CGFloat(sp) / total
-                items.append((i, x, w))
-                h = max(h, subviews[i].sizeThatFits(ProposedViewSize(width: w, height: nil)).height)
+            var x: CGFloat = 0
+            var cols: [(i: Int, sp: Int, x: CGFloat, w: CGFloat, bottom: CGFloat, stretch: Bool)] = []
+            for (i, s) in g {
+                let w = free * CGFloat(s) / total
+                cols.append((i, s, x, w, h(i, w), subviews[i][TileStretchKey.self]))
                 x += w + spacing
             }
-            return (items, h)
+            var rowH = cols.map { $0.bottom }.max() ?? 0
+            var items: [(Int, CGFloat, CGFloat, CGFloat, CGFloat?)] = []
+            let canStretch = cols.contains { $0.stretch }
+            if g.count > 1 {
+                for k in cols.indices where !cols[k].stretch {
+                    var tucked = 0
+                    while let j = queue.first, sp(j) <= cols[k].sp, rowH - cols[k].bottom > 80 {
+                        let y = cols[k].bottom + spacing, hj = h(j, cols[k].w)
+                        // fits in the gap, or (one tile) a radar beside it can stretch to cover the difference
+                        guard y + hj <= rowH + 1 || (canStretch && tucked == 0) else { break }
+                        items.append((j, cols[k].x, y, cols[k].w, nil))
+                        cols[k].bottom = y + hj
+                        rowH = max(rowH, cols[k].bottom)
+                        tucked += 1
+                        queue.removeFirst()
+                    }
+                }
+            }
+            for c in cols { items.append((c.i, c.x, 0, c.w, c.stretch ? rowH : nil)) }
+            rows.append((items, rowH))
         }
+        return rows
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -811,9 +837,9 @@ struct DashGridLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
         for row in arrange(bounds.width, subviews) {
-            for (i, x, w) in row.items {
-                subviews[i].place(at: CGPoint(x: bounds.minX + x, y: y), anchor: .topLeading,
-                                  proposal: ProposedViewSize(width: w, height: nil))
+            for (i, x, dy, w, fill) in row.items {
+                subviews[i].place(at: CGPoint(x: bounds.minX + x, y: y + dy), anchor: .topLeading,
+                                  proposal: ProposedViewSize(width: w, height: fill))
             }
             y += row.height + spacing
         }

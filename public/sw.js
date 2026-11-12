@@ -1,6 +1,6 @@
 // Minimal service worker: caches the app shell so it opens instantly and works as an installed app.
 // Weather data is never cached here, so forecasts are always live.
-const CACHE = 'doppleriq-shell-v41';
+const CACHE = 'doppleriq-shell-v42';
 const SHELL = ['/', '/index.html', '/css/app.css', '/js/app.js', '/js/config.js', '/js/util.js', '/js/api.js', '/js/map.js', '/js/forecast.js', '/js/dashboard.js', '/js/notify.js', '/js/plan.js', '/icons/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
