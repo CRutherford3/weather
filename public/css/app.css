@@ -692,3 +692,5 @@ body[data-plan="pro"] .tier-badge, body[data-plan="plus"] .tier-badge.t-plus { d
 .srow i { font-style: normal; color: #8b5cf6; font-weight: 800; visibility: hidden; } .srow.on i { visibility: visible; } .srow.on { background: color-mix(in srgb, #8b5cf6 10%, transparent); }
 .style-card { position: relative; } .style-card .llock { position: absolute; top: 12px; right: 12px; }
 .style-thumb { background-size: cover; background-position: center; }
+.style-thumb.proDark { background: linear-gradient(135deg, #050505, #1c1c1c); }
+.style-thumb.proLight { background: linear-gradient(135deg, #ffffff, #e5e7eb); }

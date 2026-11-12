@@ -13,7 +13,6 @@ const ESRI = 'https://services.arcgisonline.com/ArcGIS/rest/services';
 const IEM = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
 // Map backgrounds: the same list as the app. Place names sit in a separate layer drawn above the radar.
-const CARTO = 'https://basemaps.cartocdn.com';
 const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
 const zxy = (t) => t.replace('{z}', '4').replace('{x}', '4').replace('{y}', '6');
 function rasterStyle(name, blurb, base, labels, maxzoom = 16, attribution = 'Tiles &copy; Esri') {
@@ -29,15 +28,15 @@ function rasterStyle(name, blurb, base, labels, maxzoom = 16, attribution = 'Til
     },
   };
 }
-const OSM_CARTO = '&copy; OpenStreetMap contributors &copy; CARTO';
 export const STYLES = {
   dark: rasterStyle('Grayscale', 'Dark gray, radar pops', `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`),
   light: rasterStyle('Daylight', 'Light gray', `${ESRI}/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`),
   roads: rasterStyle('Roads', 'Street map', `${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`, null, 18),
   aerial: rasterStyle('Aerial', 'Satellite photos', `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, 18),
   topo: rasterStyle('Topography', 'Terrain and elevation', `${ESRI}/World_Topo_Map/MapServer/tile/{z}/{y}/{x}`, null, 18),
-  proDark: rasterStyle('Pro Dark', 'Black, minimal', `${CARTO}/dark_nolabels/{z}/{x}/{y}.png`, `${CARTO}/dark_only_labels/{z}/{x}/{y}.png`, 18, OSM_CARTO),
-  proLight: rasterStyle('Pro Light', 'White, minimal', `${CARTO}/light_nolabels/{z}/{x}/{y}.png`, `${CARTO}/light_only_labels/{z}/{x}/{y}.png`, 18, OSM_CARTO),
+  // OpenFreeMap vector styles (CARTO's raster tiles need a key on the web)
+  proDark: { name: 'Pro Dark', blurb: 'Black, minimal', url: 'https://tiles.openfreemap.org/styles/dark' },
+  proLight: { name: 'Pro Light', blurb: 'White, minimal', url: 'https://tiles.openfreemap.org/styles/positron' },
   vfr: rasterStyle('VFR Sectional', 'FAA aviation chart', 'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}', null, 12, 'FAA'),
 };
 // Older saved choices
@@ -123,7 +122,7 @@ function onStyleLoad() {
   for (const id of Object.keys(active)) { try { active[id]?.remove?.(); } catch { /* gone */ } delete active[id]; }
   addFrontImages();
   if (routeData) setTimeout(() => drawRoute(...routeData, true), 0);
-  if (!STYLES[S.style] && S.style !== 'auto') brightenDark();
+  if (S.style === 'proDark') brightenDark();
   // Let the base map paint first, then bring in radar and the other layers
   let started = false;
   const go = () => { if (started) return; started = true; applyLayers(); };
