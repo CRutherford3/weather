@@ -42,11 +42,12 @@ export const STYLES = {
 // Older saved choices
 const LEGACY_STYLE = { streets: 'roads', satellite: 'aerial' };
 
-const DEFAULT_LAYERS = { radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, rainrate: false, echotops: false, road: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
+const DEFAULT_LAYERS = { tempmap: false, radar: true, alerts: true, places: true, fronts: true, sat: false, lightning: false, winds: false, temps: false, aqi: false, rain: false, spc: false, mcd: false, lsr: false, sites: false, twoutlook: false, windprob: false, surgerisk: false, snowdepth: false, snowprob: false, snowcover: false, buoys: false, outages: false, waves: false, sst: false, charts: false, rigs: false, cams: false, hail: false, rainrate: false, echotops: false, road: false, traffic: false, tropics: true, drought: false, quakes: false, fires: false, iss: false };
 export const S = {
   style: ((v) => LEGACY_STYLE[v] || v)(store.get('mapStyle', 'auto')),
   radarSrc: store.get('radarSrc', 'us'),
-  hiDef: store.get('radarHiDef', true), // US mosaic: Hi-Def (cleaned and smoothed) or Standard (raw) // 'site' only while the Doppler layer is on (see buildRadar)
+  hiDef: store.get('radarHiDef', true),
+  radarMode: store.get('radarMode', 'recent'), // US mosaic: recent (last hour), history (past 48 hours) or future (HRRR forecast) // US mosaic: Hi-Def (cleaned and smoothed) or Standard (raw) // 'site' only while the Doppler layer is on (see buildRadar)
   opacity: store.get('opacity', 0.75),
   speed: store.get('speed', 450),
   sat: store.get('satType', 'ir'),
@@ -61,7 +62,7 @@ export const S = {
   tilt: +store.get('siteTilt', 0) || 0,
   layers: Object.assign({}, DEFAULT_LAYERS, store.get('layers2', {})),
 };
-const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('radarHiDef', S.hiDef); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); store.set('siteFam', S.siteFam); store.set('siteTilt', S.tilt); };
+const save = () => { store.set('layers2', S.layers); store.set('mapStyle', S.style); store.set('radarSrc', S.radarSrc); store.set('radarHiDef', S.hiDef); store.set('radarMode', S.radarMode); store.set('opacity', S.opacity); store.set('speed', S.speed); store.set('satType', S.sat); store.set('rainType', S.rain); store.set('hailHours', S.hail); store.set('surgeCat', S.surgeCat); store.set('snowDay', S.snowDay); store.set('snowAmt', S.snowAmt); store.set('radarSite', S.site); store.set('siteProd', S.siteProd); store.set('siteFam', S.siteFam); store.set('siteTilt', S.tilt); };
 
 export const LAYER_GROUPS = [
   // Pro group: single-site Doppler radar (also in the Radar Pack), then marine and space layers
@@ -71,7 +72,7 @@ export const LAYER_GROUPS = [
     ['iss', 'ISS Orbital Tracking'],
   ], 'pro'],
   ['Radar & Satellite', [
-    ['radar', 'Radar', 'radarOpts'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rainrate', 'Rain Rate (now)'], ['rain', 'Rain Totals', 'rainOpts'], ['echotops', 'Echo Tops (storm height)'],
+    ['radar', 'Radar', 'radarOpts'], ['tempmap', 'Temperature Map'], ['sat', 'Satellite Clouds', 'satOpts'], ['lightning', 'Lightning'], ['rainrate', 'Rain Rate (now)'], ['rain', 'Rain Totals', 'rainOpts'], ['echotops', 'Echo Tops (storm height)'],
   ]],
   ['Severe Weather', [
     ['alerts', 'Warnings & Watches'], ['spc', 'SPC Severe Outlook'], ['mcd', 'Mesoscale Discussions'], ['lsr', 'Storm Reports (Hail, Wind, Tornado)'],
@@ -213,6 +214,7 @@ export function setStyle(v) {
   S.style = v; save(); styleReady = false;
   stopAnim();
   map.setStyle(styleUrl(), { diff: false });
+  map2?.setStyle(styleUrl(), { diff: false });
 }
 
 export function flyTo(loc, z = 7) { map?.flyTo({ center: [loc.lon, loc.lat], zoom: Math.max(z, map.getZoom() < 4 ? z : map.getZoom()), duration: 1200 }); }
@@ -320,6 +322,8 @@ function onClick(e) {
 // ================= Radar loop =================
 const R = { frames: [], idx: 0, playing: true, timer: null, hold: 0 };
 ADD.radar = async () => { await buildRadar(); return { remove: clearRadar }; };
+// US radar at a past time (IEM time-enabled NEXRAD mosaic, WMS)
+const radarAt = (t) => `https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=nexrad-n0q-wmst&STYLES=&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=true&TIME=${new Date(t).toISOString().slice(0, 19)}Z`;
 async function buildRadar() {
   const frames = [];
   if (S.radarSrc === 'site' && !(S.layers.sites && canLayer('sites'))) S.radarSrc = 'us'; // Doppler layer off: back to Hi-Def
@@ -345,10 +349,32 @@ async function buildRadar() {
     let base = Math.floor(Date.now() / 300e3) * 300e3 - 300e3;
     try { const j = await feeds.iemTms(); const s = (j.services || []).find((x) => /n0q/i.test(x.id || '') && x.utc_valid); if (s) base = new Date(s.utc_valid).getTime(); } catch { /* estimate */ }
     const bust = Math.floor(Date.now() / 300e3);
-    for (let m = 50; m >= 0; m -= 5) {
-      const lname = m ? `nexrad-n0q-900913-m${String(m).padStart(2, '0')}m` : 'nexrad-n0q-900913';
-      const tile = `${IEM}/${lname}/{z}/{x}/{y}.png?_=${bust}`;
-      frames.push({ t: base - m * 60e3, url: S.hiDef && hiDefReady ? tile.replace('https://', 'hidef://') : tile, maxzoom: 12 });
+    const hd = (u) => (S.hiDef && hiDefReady ? u.replace('https://', 'hidef://') : u);
+    const latest = `${IEM}/nexrad-n0q-900913/{z}/{x}/{y}.png?_=${bust}`;
+    if (S.radarMode === 'history') {
+      // Past 48 hours, one frame an hour, ending with the latest scan (IEM time-enabled radar)
+      const hour = Math.floor(base / 3600e3) * 3600e3;
+      for (let h = 48; h >= 1; h--) frames.push({ t: hour - h * 3600e3, url: hd(radarAt(hour - h * 3600e3)), maxzoom: 10 });
+      if (base > hour) frames.push({ t: hour, url: hd(radarAt(hour)), maxzoom: 10 });
+      frames.push({ t: base, url: hd(latest), maxzoom: 12 });
+    } else if (S.radarMode === 'future') {
+      // Now, then the HRRR model's forecast radar every 30 minutes for about 8 hours
+      frames.push({ t: base, url: hd(latest), maxzoom: 12 });
+      try {
+        const j = await getData('https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_1080.json', { cache: 600e3 });
+        const init = new Date(j.model_init_utc).getTime(), now = Date.now();
+        for (let f = 0; f <= 1080; f += 30) {
+          const v = init + f * 60e3;
+          if (v <= now - 600e3 || v > now + 8.5 * 3600e3) continue;
+          frames.push({ t: v, future: true, url: hd(`https://mesonet.agron.iastate.edu/cgi-bin/wms/hrrr/refd.cgi?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=refd_${String(f).padStart(4, '0')}&STYLES=&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=true`), maxzoom: 9 });
+        }
+        if (frames.length === 1) toast('The future radar forecast is updating. Try again in a few minutes.');
+      } catch { toast('Future radar is unavailable right now'); }
+    } else {
+      for (let m = 50; m >= 0; m -= 5) {
+        const lname = m ? `nexrad-n0q-900913-m${String(m).padStart(2, '0')}m` : 'nexrad-n0q-900913';
+        frames.push({ t: base - m * 60e3, url: hd(`${IEM}/${lname}/{z}/{x}/{y}.png?_=${bust}`), maxzoom: 12 });
+      }
     }
   } else {
     const j = await feeds.rainviewer();
@@ -365,7 +391,7 @@ async function buildRadar() {
     return { ...f, id };
   });
   $('#tlRange').max = R.frames.length - 1;
-  showFrame(R.frames.length - 1);
+  showFrame(R.frames[0]?.future ? 0 : R.frames.length - 1);
   if (R.playing) play();
 }
 function reloadRadar() { refresh('radar'); }
@@ -376,16 +402,19 @@ function showFrame(i) {
   R.frames.forEach((f, k) => { if (map.getLayer(f.id)) map.setPaintProperty(f.id, 'raster-opacity', k === i ? S.opacity : 0); });
   const f = R.frames[i];
   $('#tlTime').textContent = localTime(f.t);
-  $('#tlAgo').textContent = (S.radarSrc === 'site' ? `K${S.site} · ` : '') + (i === R.frames.length - 1 ? 'Latest' : `${Math.round((Date.now() - f.t) / 60e3)} min ago`);
+  const ago = Math.round((Date.now() - f.t) / 60e3);
+  $('#tlAgo').textContent = f.future ? `Forecast, in ${fmtSpan(-ago)}` : (S.radarSrc === 'site' ? `K${S.site} · ` : '') + (i === R.frames.length - 1 ? 'Latest' : `${fmtSpan(ago)} ago`);
+  $('#tlTime').textContent = S.radarMode === 'history' && S.radarSrc === 'us' ? new Date(f.t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : localTime(f.t);
   $('#tlRange').value = i;
 }
+const fmtSpan = (m) => (m < 90 ? `${Math.max(0, m)} min` : `${Math.round(m / 60)} hr`);
 function play() {
   clearInterval(R.timer); R.playing = true; $('#tlPlay').innerHTML = PAUSE;
   R.timer = setInterval(() => {
     if (!R.frames.length) return;
     if (R.idx === R.frames.length - 1 && R.hold < 3) { R.hold++; return; }
     R.hold = 0; showFrame((R.idx + 1) % R.frames.length);
-  }, S.speed);
+  }, S.radarMode === 'history' && S.radarSrc === 'us' ? Math.max(90, S.speed / 3) : S.speed);
 }
 function pause() { clearInterval(R.timer); R.playing = false; $('#tlPlay').innerHTML = PLAY; }
 function stopAnim() { clearInterval(R.timer); }
@@ -622,6 +651,9 @@ ADD.outages = async () => {
 
 // ================= Tropics & snow (NOAA map services) =================
 const NOAA_MS = 'https://mapservices.weather.noaa.gov';
+// Temperature map: NWS forecast temperatures (NDFD), shaded
+const ndfdTemp = (bbox = '{bbox-epsg-3857}') => `${NOAA_MS}/raster/rest/services/NDFD/NDFD_temp/MapServer/export?bbox=${bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image&_=${Math.floor(Date.now() / 10800e3)}`;
+ADD.tempmap = async () => raster('tempmap', ndfdTemp(), { opacity: 0.6, maxzoom: 12, before: firstRadarOr() });
 const agsExport = (svc, layers, img = false) => `${NOAA_MS}/${svc}/${img ? 'exportImage' : 'export'}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true${layers ? `&layers=show:${layers}` : ''}&f=image`;
 // NOAA's map images don't allow cross-site loading, so they come through our proxy (the bbox placeholder stays for MapLibre)
 const viaProxy = (u) => `/api/proxy?url=${encodeURIComponent(u).replace('%7Bbbox-epsg-3857%7D', '{bbox-epsg-3857}')}`;
@@ -1011,6 +1043,8 @@ function buildDock() {
   $('#srcBtn').onclick = openSourceSheet;
   $('#toolLayers').onclick = openLayersSheet;
   $('#toolStyle').onclick = openStyleSheet;
+  const sp = $('#toolSplit'); if (sp) sp.onclick = () => toggleSplit();
+  if (store.get('splitOn', false)) setTimeout(() => toggleSplit(true), 800);
   $('#toolInfo').onclick = () => quickForecast(map.getCenter());
   $('#toolGlobe').onclick = () => map.flyTo({ zoom: map.getZoom() > 3 ? 1.6 : 6.5, duration: 1500 });
   $('#sheetClose').onclick = closeSheet;
@@ -1018,7 +1052,7 @@ function buildDock() {
 function updateDock() {
   const on = S.layers.radar;
   const sp = SITE_PRODUCTS[S.siteFam] || SITE_PRODUCTS.ref;
-  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? (S.hiDef ? 'Hi-Def Radar' : 'Standard Radar') : S.radarSrc === 'site' ? `K${S.site || ''} ${sp[0].replace(/ \(.*\)/, '')}${sp[1] ? ` ${TILTS[S.tilt]}` : ''}` : 'Global Radar') : 'Radar Off';
+  $('#srcName').textContent = on ? (S.radarSrc === 'us' ? (S.radarMode === 'history' ? 'Past 48 Hours' : S.radarMode === 'future' ? 'Future Radar' : S.hiDef ? 'Hi-Def Radar' : 'Standard Radar') : S.radarSrc === 'site' ? `K${S.site || ''} ${sp[0].replace(/ \(.*\)/, '')}${sp[1] ? ` ${TILTS[S.tilt]}` : ''}` : 'Global Radar') : 'Radar Off';
   $('#legendBar').classList.remove('vel');
   $('#legendBar').style.background = on && S.radarSrc === 'site' && LEGENDS[S.siteFam] ? LEGENDS[S.siteFam] : `linear-gradient(90deg,${DBZ_LEGEND.join(',')})`;
   $('#legendBar').style.opacity = on ? 1 : 0.25;
@@ -1026,7 +1060,7 @@ function updateDock() {
   if (!on) { $('#tlTime').textContent = '--'; $('#tlAgo').textContent = ''; }
 }
 function openSourceSheet() {
-  const sel = (v) => (v === 'off' ? !S.layers.radar : S.layers.radar && (v === 'std' ? S.radarSrc === 'us' && !S.hiDef : v === 'us' ? S.radarSrc === 'us' && S.hiDef : S.radarSrc === v));
+  const sel = (v) => (v === 'off' ? !S.layers.radar : S.layers.radar && (v === 'std' ? S.radarSrc === 'us' && S.radarMode === 'recent' && !S.hiDef : v === 'us' ? S.radarSrc === 'us' && S.radarMode === 'recent' && S.hiDef : S.radarSrc === v));
   const opt = (v, t, d) => `<button class="opt-row${sel(v) ? ' on' : ''}" data-v="${v}"><span class="opt-thumb ${v}"></span><span><b>${t}</b><small>${d}</small></span><i>✓</i></button>`;
   openSheet('Radar', `<div class="opt-list">
     ${opt('us', 'Hi-Def Radar', 'US NEXRAD mosaic · smoothed, drizzle and clutter removed')}
@@ -1042,7 +1076,7 @@ function openSourceSheet() {
       else {
         const src = v === 'std' ? 'us' : v, hd = v !== 'std';
         S.layers.radar = true;
-        if (S.radarSrc !== src || (src === 'us' && S.hiDef !== hd)) { S.radarSrc = src; S.hiDef = hd; disable('radar'); }
+        if (S.radarSrc !== src || (src === 'us' && (S.hiDef !== hd || S.radarMode !== 'recent'))) { S.radarSrc = src; S.hiDef = hd; S.radarMode = 'recent'; disable('radar'); }
       }
       applyLayers(); closeSheet();
     });
@@ -1069,7 +1103,7 @@ const OPTS = {
 // ================= Layers sheet: Loops / Overlays / Radars (same layout as the app) =================
 // Loops: picture cards for the radar, satellite and rain loops. Overlays: switches for everything drawn on top.
 // Radars: every NEXRAD site by state, the three nearest first, with search.
-const LOOP_IDS = new Set(['radar', 'sat', 'lightning', 'rainrate', 'rain', 'echotops', 'sites']);
+const LOOP_IDS = new Set(['tempmap', 'radar', 'sat', 'lightning', 'rainrate', 'rain', 'echotops', 'sites']);
 const THUMB_BASE = `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/4/6/4`;
 let layersTab = store.get('layersTab', 'loops');
 let statesP;
@@ -1109,13 +1143,16 @@ function loopsPane(p) {
   const geoT = new Date(Math.floor((Date.now() - 90 * 60e3) / 600e3) * 600e3).toISOString().replace('.000Z', 'Z');
   const goes = (ch) => `${IEM}/goes_east_conus_${ch}/4/4/6.png`;
   const cards = [
-    ['radar:us', 'Hi-Def Radar', 'Smooth, high-resolution radar mosaic', mosaic && S.radarSrc === 'us' && S.hiDef, `hidef:${IEM}/nexrad-n0q-900913/4/4/6.png`],
-    ['radar:std', 'Standard Radar', 'The radar mosaic without smoothing filters', mosaic && S.radarSrc === 'us' && !S.hiDef, `${IEM}/nexrad-n0q-900913/4/4/6.png`],
+    ['radar:us', 'Hi-Def Radar', 'Smooth, high-resolution radar mosaic', mosaic && S.radarSrc === 'us' && S.radarMode === 'recent' && S.hiDef, `hidef:${IEM}/nexrad-n0q-900913/4/4/6.png`],
+    ['radar:std', 'Standard Radar', 'The radar mosaic without smoothing filters', mosaic && S.radarSrc === 'us' && S.radarMode === 'recent' && !S.hiDef, `${IEM}/nexrad-n0q-900913/4/4/6.png`],
+    ['radar:history', 'Past 48 Hours', 'Replay the last two days of radar', mosaic && S.radarSrc === 'us' && S.radarMode === 'history', `${IEM}/nexrad-n0q-900913/4/4/6.png`, '🕘'],
+    ['radar:future', 'Future Radar', 'Short-term radar forecast from the HRRR model', mosaic && S.radarSrc === 'us' && S.radarMode === 'future', `${IEM}/nexrad-n0q-900913/4/4/6.png`, '✨'],
     ['radar:global', 'Global Radar', 'Worldwide coverage at lower resolution', mosaic && S.radarSrc === 'global', null, '🌐'],
     ['sat:geocolor', 'True Color Satellite', 'Clouds as your eyes would see them (daytime, about 90 minutes behind)', S.layers.sat && S.sat === 'geocolor', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/${geoT}/GoogleMapsCompatible_Level7/4/6/4.jpg`],
     ['sat:vis', 'Visible Satellite', 'Sharp daytime cloud detail', S.layers.sat && S.sat === 'vis', goes('ch02')],
     ['sat:ir', 'Infrared Satellite', 'Cloud-top temperatures, day and night', S.layers.sat && S.sat === 'ir', goes('ch13')],
     ['sat:wv', 'Water Vapor', 'Moisture in the middle and upper air', S.layers.sat && S.sat === 'wv', goes('ch09')],
+    ['tempmap', 'Temperature Map', 'Forecast temperatures, shaded', S.layers.tempmap, ndfdTemp('-10018754.17,2504688.54,-7514065.63,5009377.09')],
     ['rainrate', 'Rain Rate', "How hard it's raining right now", S.layers.rainrate, null, '💧'],
     ['rain:1h', 'Past Hour Rain', 'Rain that fell in the last hour', S.layers.rain && S.rain === '1h', `${IEM}/q2-n1p-900913/4/4/6.png`],
     ['rain:24h', 'Rain Totals (24 hr)', 'Rain that fell in the last day', S.layers.rain && S.rain === '24h', `${IEM}/q2-p24h-900913/4/4/6.png`],
@@ -1141,9 +1178,12 @@ function loopsPane(p) {
     }
     if (!canLayer(id)) { gate(id, layerName(id)); return; }
     if (id === 'radar') {
-      const src = v === 'std' ? 'us' : v, hd = v !== 'std';
+      const src = v === 'global' ? 'global' : 'us';
+      const mode = v === 'history' || v === 'future' ? v : 'recent';
+      if (mode !== 'recent' && !canLayer('sites')) { gate('sites', mode === 'history' ? 'Past 48 hours of radar' : 'Future radar'); return; }
+      const hd = v === 'std' ? false : v === 'us' ? true : S.hiDef;
       S.layers.radar = true;
-      if (S.radarSrc !== src || (src === 'us' && S.hiDef !== hd)) { S.radarSrc = src; S.hiDef = hd; disable('radar'); }
+      if (S.radarSrc !== src || S.radarMode !== mode || S.hiDef !== hd) { S.radarSrc = src; S.radarMode = mode; S.hiDef = hd; disable('radar'); }
       applyLayers();
     } else if (id === 'sat' || id === 'rain') {
       const key = id === 'sat' ? 'sat' : 'rain';
@@ -1263,3 +1303,52 @@ function openStyleSheet() {
 
 // Units changed: redraw layers that print numbers
 export function refreshUnits() { for (const id of ['temps', 'waves']) if (active[id]) refresh(id); }
+
+// ================= Split screen (Pro) =================
+// A second map under the radar, panning and zooming together. It shows the latest picture of whichever loop
+// you pick for it (satellite, radar, rain totals or temperatures).
+const PANE2 = {
+  ir: ['Infrared Satellite', () => `${IEM}/goes_east_conus_ch13/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, 9, 0.75],
+  vis: ['Visible Satellite', () => `${IEM}/goes_east_conus_ch02/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, 9, 0.75],
+  wv: ['Water Vapor', () => `${IEM}/goes_east_conus_ch09/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, 9, 0.75],
+  geocolor: ['True Color Satellite', () => `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/${new Date(Math.floor((Date.now() - 90 * 60e3) / 600e3) * 600e3).toISOString().replace('.000Z', 'Z')}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.jpg`, 7, 0.9],
+  radar: ['Hi-Def Radar', () => `hidef://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, 12, 0.8],
+  rain24: ['Rain Totals (24 hr)', () => `${IEM}/q2-p24h-900913/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 600e3)}`, 10, 0.75],
+  tempmap: ['Temperature Map', () => ndfdTemp(), 12, 0.65],
+};
+let map2 = null, pane2 = store.get('pane2', 'ir'), syncing = false, pane2Timer;
+function pane2Layer() {
+  if (!map2?.getStyle()) return;
+  if (map2.getLayer('p2')) map2.removeLayer('p2');
+  if (map2.getSource('p2')) map2.removeSource('p2');
+  const [, url, maxzoom, opacity] = PANE2[pane2] || PANE2.ir;
+  const before = map2.getLayer('ref') ? 'ref' : (map2.getStyle().layers || []).find((l) => l.type === 'symbol')?.id;
+  map2.addSource('p2', { type: 'raster', tiles: [url()], tileSize: 256, maxzoom });
+  map2.addLayer({ id: 'p2', type: 'raster', source: 'p2', paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } }, before);
+  $('#pane2Name').textContent = (PANE2[pane2] || PANE2.ir)[0];
+}
+function pane2Menu() {
+  openSheet('Bottom map', `<div class="opt-list">${Object.entries(PANE2).map(([k, [t]]) => `<button class="opt-row${k === pane2 ? ' on' : ''}" data-p2="${k}"><span><b>${t}</b></span><i>✓</i></button>`).join('')}</div>`, (b) => {
+    $$('[data-p2]', b).forEach((x) => x.onclick = () => { pane2 = x.dataset.p2; store.set('pane2', pane2); pane2Layer(); closeSheet(); });
+  });
+}
+export function toggleSplit(force) {
+  const on = force ?? !document.body.classList.contains('split');
+  if (on && !gate('split', 'Split screen')) return;
+  document.body.classList.toggle('split', on);
+  store.set('splitOn', on);
+  $('#toolSplit')?.classList.toggle('on', on);
+  if (on && !map2) {
+    const host = document.createElement('div'); host.id = 'map2';
+    host.innerHTML = '<button class="pane2-pick" id="pane2Pick"><span id="pane2Name"></span> ▾</button>';
+    $('#view-radar').appendChild(host);
+    map2 = new ml.Map({ container: host, style: styleUrl(), center: map.getCenter(), zoom: map.getZoom(), maxZoom: 16, minZoom: 1, attributionControl: false, dragRotate: false, pitchWithRotate: false });
+    map2.touchZoomRotate.disableRotation();
+    map2.on('style.load', pane2Layer);
+    const follow = (from, to) => () => { if (syncing) return; syncing = true; to.jumpTo({ center: from.getCenter(), zoom: from.getZoom() }); syncing = false; };
+    map.on('move', follow(map, map2)); map2.on('move', follow(map2, map));
+    $('#pane2Pick').onclick = pane2Menu;
+    pane2Timer = setInterval(() => { if (document.body.classList.contains('split')) pane2Layer(); }, 5 * 60e3);
+  }
+  setTimeout(() => { map.resize(); map2?.resize(); if (on) map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom() }); }, 60);
+}

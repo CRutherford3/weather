@@ -702,3 +702,11 @@ body.free-testing .tier-badge { display: inline-block !important; }
 .test-chip .tc-short, .test-chip .tc-tiny { display: none; }
 @media (max-width: 1180px) { .test-chip .tc-long { display: none; } .test-chip .tc-short { display: inline; } }
 @media (max-width: 760px) { .test-chip { padding: 4px 8px; font-size: 11px; } .test-chip .tc-short { display: none; } .test-chip .tc-tiny { display: inline; } }
+
+/* Split screen: radar on top, a second map below that moves with it */
+body.split #view-radar #map { bottom: 50%; }
+#map2 { position: absolute; left: 0; right: 0; top: 50%; bottom: 0; border-top: 2px solid #8b5cf6; display: none; background: #080808; }
+body.split #map2 { display: block; }
+.pane2-pick { position: absolute; z-index: 5; top: 10px; left: 50%; transform: translateX(-50%); border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); color: var(--text); font: 600 13px Inter, sans-serif; padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+#toolSplit.on, #toolSplit.on svg { color: #8b5cf6; }
+body.split .crosshair { top: 25%; }
