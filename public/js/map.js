@@ -15,7 +15,7 @@ const IEM = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 // Map backgrounds: the same list as the app. Place names sit in a separate layer drawn above the radar.
 const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
 const zxy = (t) => t.replace('{z}', '4').replace('{x}', '4').replace('{y}', '6');
-function rasterStyle(name, blurb, base, labels, maxzoom = 16, attribution = 'Tiles &copy; Esri') {
+function rasterStyle(name, blurb, base, labels, maxzoom = 16, attribution = 'Tiles &copy; Esri', paint) {
   return {
     name, blurb, thumb: zxy(base),
     url: {
@@ -24,7 +24,7 @@ function rasterStyle(name, blurb, base, labels, maxzoom = 16, attribution = 'Til
         img: { type: 'raster', tiles: [base], tileSize: 256, maxzoom, attribution },
         ...(labels ? { ref: { type: 'raster', tiles: [labels], tileSize: 256, maxzoom } } : {}),
       },
-      layers: [{ id: 'img', type: 'raster', source: 'img' }, ...(labels ? [{ id: 'ref', type: 'raster', source: 'ref' }] : [])],
+      layers: [{ id: 'img', type: 'raster', source: 'img', ...(paint ? { paint } : {}) }, ...(labels ? [{ id: 'ref', type: 'raster', source: 'ref' }] : [])],
     },
   };
 }
@@ -32,7 +32,9 @@ export const STYLES = {
   dark: rasterStyle('Grayscale', 'Dark gray, radar pops', `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`),
   light: rasterStyle('Daylight', 'Light gray', `${ESRI}/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`),
   roads: rasterStyle('Roads', 'Street map', `${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`, null, 18),
-  aerial: rasterStyle('Aerial', 'Satellite photos', `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, 18),
+  aerial: rasterStyle('Aerial', 'Satellite photos', `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, 18, undefined,
+    // the aerial photos are dark over forest and farmland; lift the shadows and color a little
+    { 'raster-brightness-min': 0.12, 'raster-saturation': 0.2, 'raster-contrast': 0.1 }),
   topo: rasterStyle('Topography', 'Terrain and elevation', `${ESRI}/World_Topo_Map/MapServer/tile/{z}/{y}/{x}`, null, 18),
   // OpenFreeMap vector styles (CARTO's raster tiles need a key on the web)
   proDark: { name: 'Pro Dark', blurb: 'Black, minimal', url: 'https://tiles.openfreemap.org/styles/dark' },
@@ -428,7 +430,10 @@ ADD.sat = async () => {
     return raster('sat', `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/${t}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.jpg`, { opacity: 0.85, maxzoom: 7, before: firstRadarOr() });
   }
   const ch = { ir: 'ch13', vis: 'ch02', wv: 'ch09' }[S.sat] || 'ch13';
-  return raster('sat', `${IEM}/goes_east_conus_${ch}/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.7, maxzoom: 9, before: firstRadarOr() });
+  const h = raster('sat', `${IEM}/goes_east_conus_${ch}/{z}/{x}/{y}.png?_=${Math.floor(Date.now() / 300e3)}`, { opacity: 0.7, maxzoom: 9, before: firstRadarOr() });
+  // Satellite pixels are about 2 km wide, so up close they only dim the map: fade them as you zoom in
+  try { map.setPaintProperty('sat', 'raster-opacity', ['interpolate', ['linear'], ['zoom'], 8, 0.7, 11, 0.3, 13, 0.15]); } catch { /* older engine */ }
+  return h;
 };
 const firstRadarOr = () => (R.frames[0] && map.getLayer(R.frames[0].id) ? R.frames[0].id : beforeId());
 // Lightning strike density, last 15 minutes (NOAA nowCOAST / NWS Ocean Prediction Center)
