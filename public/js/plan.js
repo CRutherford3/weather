@@ -56,7 +56,7 @@ export function openPricing(reason) {
     <div class="price-grid">${['free', 'plus', 'pro'].map(card).join('')}</div>
     <div class="price-card pack"><div class="pc-head"><b>${RADAR_PACK.name}</b></div><div class="pc-price">${RADAR_PACK.price}<small> once</small></div><p class="muted small">${esc(RADAR_PACK.blurb)}</p>
       <button class="btn wide ghost" data-buy="pack">${hasRadarPack() ? 'Owned' : `Buy for ${RADAR_PACK.price}`}</button></div>
-    <p class="muted small sheet-foot">Cancel any time. Yearly plans start with a ${TRIAL_DAYS}-day free trial. Secure checkout by Stripe. Sign in with the same email to use your plan on the apps.</p>`;
+    <p class="muted small sheet-foot">Cancel any time. Yearly plans start with a ${TRIAL_DAYS}-day free trial. Secure checkout by Stripe. Subscriptions renew until canceled. By subscribing you agree to the <a href="/terms.html" target="_blank">Terms</a> and <a href="/refunds.html" target="_blank">Refund Policy</a>.</p>`;
   openSheet('DopplerIQ plans', html(), function wire(b) {
     $$('[data-bill]', b).forEach((x) => x.onclick = () => { yearly = x.dataset.bill === 'y'; store.set('billYearly', yearly); b.innerHTML = html(); wire(b); });
     $$('[data-buy]', b).forEach((x) => x.onclick = () => {

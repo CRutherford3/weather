@@ -432,6 +432,9 @@ function openSettings(view = 'main') {
     <div class="sheet-sub">About</div>
     <button class="set-row" id="setAttrib"><span><b>Licenses & Attributions</b></span><i class="chev">›</i></button>
     <button class="set-row" id="setPrivacy"><span><b>Privacy</b></span><i class="chev">›</i></button>
+    <a class="set-row" href="/terms.html" target="_blank" rel="noopener"><span><b>Terms of Service</b></span><i class="chev">›</i></a>
+    <a class="set-row" href="/refunds.html" target="_blank" rel="noopener"><span><b>Refund Policy</b></span><i class="chev">›</i></a>
+    <a class="set-row" href="/support.html" target="_blank" rel="noopener"><span><b>Contact &amp; Support</b></span><i class="chev">›</i></a>
     <button class="set-row" id="setReset"><span><b>Reset map layers</b><small>Back to the default layers and style</small></span><i class="chev">›</i></button>
     <p class="set-ver">${esc(APP_NAME)} ${VERSION}</p>`, (b) => {
     $$('#setUnits button', b).forEach((x) => x.onclick = () => { if (units.system !== x.dataset.v) $('#unitBtn').click(); openSettings(); });
