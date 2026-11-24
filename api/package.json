@@ -7,6 +7,7 @@
     "@netlify/blobs": "^8.1.0",
     "@netlify/functions": "^2.8.2",
     "h5wasm": "^0.7.8",
-    "seek-bzip": "^2.0.0"
+    "seek-bzip": "^2.0.0",
+    "stripe": "^17.0.0"
   }
 }

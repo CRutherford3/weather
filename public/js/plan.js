@@ -1,7 +1,8 @@
 // Subscription tiers, feature gating and ad slots.
-// Plans live in this browser for now. Real billing needs accounts + Stripe webhooks (next phase).
+// Plans come from the signed-in DopplerIQ account (Stripe billing, see account.js).
 import { store, $, $$, esc, openSheet, toast } from './util.js';
-import { ADS, CHECKOUT } from './config.js';
+import { ADS } from './config.js';
+import { account, buy } from './account.js';
 
 export const TIERS = {
   free: { name: 'Free', price: '$0', blurb: 'Radar, forecasts and alerts, with ads', features: ['Live radar and satellite', 'Forecasts and NWS alerts', 'Fronts and NHC tropical outlooks', 'Storm reports and outlooks', 'Dashboard with 1 page'] },
@@ -16,25 +17,24 @@ export const RADAR_PACK = { name: 'Pro Radar Pack', price: '$6.99', blurb: 'One-
 export const TRIAL_DAYS = 7; // free trial on yearly plans (App Store introductory offer)
 export const PAGE_LIMIT = { free: 1, plus: 5, pro: 99 };
 
-// Testing period: every feature is unlocked for everyone. Plan badges still show so people see what will be paid.
-// Set to false when accounts and checkout go live.
-export const FREE_WHILE_TESTING = true;
-// Test site: pro.weather.dialcheck.io always runs as Pro
-const FORCED = FREE_WHILE_TESTING || /^pro\./.test(location.hostname) ? 'pro' : null;
+// Testing period is over: plans are live and billed through Stripe.
+export const FREE_WHILE_TESTING = false;
 const PACK_LAYERS = new Set(['sites']);
-export const hasRadarPack = () => !!store.get('radarPack', false);
-export const plan = () => FORCED ||  (RANK[store.get('plan', 'free')] != null ? store.get('plan', 'free') : 'free');
+export const hasRadarPack = () => !!account()?.radarPack;
+export const plan = () => { const p = account()?.plan; return RANK[p] != null ? p : 'free'; };
 export const has = (tier = 'free') => RANK[plan()] >= RANK[tier];
 export const canLayer = (id) => has(LAYER_TIER[id]) || (PACK_LAYERS.has(id) && hasRadarPack());
 export const can = (f) => has(FEATURE_TIER[f]);
 export const tierOf = (id) => LAYER_TIER[id] || FEATURE_TIER[id] || 'free';
 export const badge = (tier) => (tier && tier !== 'free' ? `<span class="tier-badge t-${tier}">${tier.toUpperCase()}</span>` : '');
 
-export function setPlan(p) {
-  store.set('plan', p); document.body.dataset.plan = p;
+// Re-apply the plan everywhere (after sign-in, sign-out or a purchase).
+export function setPlan(p = plan()) {
+  document.body.dataset.plan = p;
   window.dispatchEvent(new CustomEvent('plan', { detail: p }));
   fillAds(document);
 }
+window.addEventListener('account', () => setPlan());
 
 // Pricing sheet. reason = what the user tried to open.
 export function openPricing(reason) {
@@ -56,16 +56,14 @@ export function openPricing(reason) {
     <div class="price-grid">${['free', 'plus', 'pro'].map(card).join('')}</div>
     <div class="price-card pack"><div class="pc-head"><b>${RADAR_PACK.name}</b></div><div class="pc-price">${RADAR_PACK.price}<small> once</small></div><p class="muted small">${esc(RADAR_PACK.blurb)}</p>
       <button class="btn wide ghost" data-buy="pack">${hasRadarPack() ? 'Owned' : `Buy for ${RADAR_PACK.price}`}</button></div>
-    <p class="muted small sheet-foot">Cancel any time. Yearly plans start with a ${TRIAL_DAYS}-day free trial. On iPhone, iPad and Mac, plans are billed through the App Store.</p>`;
+    <p class="muted small sheet-foot">Cancel any time. Yearly plans start with a ${TRIAL_DAYS}-day free trial. Secure checkout by Stripe. Sign in with the same email to use your plan on the apps.</p>`;
   openSheet('DopplerIQ plans', html(), function wire(b) {
     $$('[data-bill]', b).forEach((x) => x.onclick = () => { yearly = x.dataset.bill === 'y'; store.set('billYearly', yearly); b.innerHTML = html(); wire(b); });
     $$('[data-buy]', b).forEach((x) => x.onclick = () => {
       const k = x.dataset.buy;
-      if (k === 'pack') { if (hasRadarPack()) return; const u = CHECKOUT.pack; if (u) { window.open(u, '_blank', 'noopener'); return; } toast('Checkout is not connected yet.'); return; }
+      if (k === 'pack') { if (!hasRadarPack()) buy('pack', x); return; }
       if (plan() === k) return;
-      const u = CHECKOUT[`${k}${yearly ? 'Yearly' : ''}`] || CHECKOUT[k];
-      if (u) { window.open(u, '_blank', 'noopener'); return; }
-      toast('Checkout is not connected yet. Use Settings → Preview plan to try it.');
+      buy(`${k}${yearly ? 'Yearly' : ''}`, x);
     });
   });
 }

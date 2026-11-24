@@ -6,6 +6,7 @@ import * as Map from './map.js';
 import { initDashboard, updateDashboard, showDashboard } from './dashboard.js';
 import { plan, setPlan, can, gate, openPricing, fillAds, adSlot, TIERS, badge, FREE_WHILE_TESTING, openTestingNote } from './plan.js';
 import { initRoute, openRoute } from './route.js';
+import { account, openSignIn, signOut, manage, handleReturn } from './account.js';
 import { loadMarine, marineHTML } from './marine.js';
 import { getData } from './util.js';
 import { initNotify, setEnabled as setNotify, enabled as notifyOn } from './notify.js';
@@ -378,7 +379,7 @@ window.addEventListener('storms', (e) => updateDashboard({ storms: e.detail }));
 
 
 // ---------- settings sheet (MyRadar-style) ----------
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const ATTRIB = [
   ['National Weather Service (NOAA)', 'Forecasts, observations, alerts, radar loops', 'https://www.weather.gov/'],
   ['NOAA NEXRAD via Iowa Environmental Mesonet', 'Radar mosaic, rain totals, GOES and lightning tiles', 'https://mesonet.agron.iastate.edu/'],
@@ -408,7 +409,7 @@ function openSettings(view = 'main') {
     return;
   }
   if (view === 'privacy') {
-    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. There are no accounts and no tracking by DopplerIQ.</p><p>On the free plan, ads may be shown by Google AdSense, which can use cookies to pick ads. Paid plans have no ads.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
+    openSheet('Privacy', `<button class="sheet-back" id="setBack">‹ Settings</button><div class="set-text"><p>Your location, saved places, layers and dashboard layout are stored only in this browser. No tracking by DopplerIQ.</p><p>If you sign in, we keep your email and your plan so it works on every device. Payments are handled by Stripe; we never see your card number.</p><p>On the free plan, ads may be shown by Google AdSense, which can use cookies to pick ads. Paid plans have no ads.</p><p>To show weather for a spot, its coordinates are sent to the weather services listed under Licenses & Attributions, the same way any weather site works.</p><p>Clearing this site's data in your browser removes everything.</p></div>`, (b) => { $('#setBack', b).onclick = () => openSettings(); });
     return;
   }
   const imp = units.system === 'imperial';
@@ -417,7 +418,10 @@ function openSettings(view = 'main') {
     <div class="set-pad"><div class="seg big" id="setTheme">${['auto', 'dark', 'light'].map((t) => `<button data-v="${t}" class="${state.theme === t ? 'on' : ''}">${t === 'auto' ? 'Auto' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
     <div class="sheet-sub">Your plan</div>
     <button class="set-row" id="setPlan"><span><b>DopplerIQ ${FREE_WHILE_TESTING ? 'Pro (free while testing)' : TIERS[plan()].name}</b><small>${FREE_WHILE_TESTING ? 'Every feature is unlocked while we test' : plan() === 'free' ? 'Go ad-free and unlock every layer' : 'Thanks for supporting DopplerIQ'}</small></span><i class="chev">›</i></button>
-    ${FREE_WHILE_TESTING ? '' : `<div class="set-pad"><small class="muted">Preview plan (testing only, until checkout is connected)</small><div class="seg" id="setPreview">${['free', 'plus', 'pro'].map((t) => `<button data-v="${t}" class="${plan() === t ? 'on' : ''}">${TIERS[t].name}</button>`).join('')}</div></div>`}
+    ${account() ? `<div class="lrow"><div class="lrow-main"><span>Signed in as <b>${esc(account().email)}</b>${account().cancelAt ? `<small class="muted"> · plan ends ${new Date(account().cancelAt).toLocaleDateString()}</small>` : account().renews && account().plan !== 'free' ? `<small class="muted"> · ${account().status === 'trialing' ? 'trial ends' : 'renews'} ${new Date(account().renews).toLocaleDateString()}</small>` : ''}</span></div></div>
+    ${account().manage ? '<button class="set-row" id="setManage"><span><b>Manage subscription</b><small>Cancel, change card, switch monthly or yearly, receipts</small></span><i class="chev">›</i></button>' : ''}
+    <button class="set-row" id="setSignOut"><span><b>Sign out</b></span><i class="chev">›</i></button>`
+    : '<button class="set-row" id="setSignIn"><span><b>Sign in</b><small>Already paid? Sign in with the same email to unlock your plan</small></span><i class="chev">›</i></button>'}
     <div class="sheet-sub">Location</div>
     <div class="lrow"><div class="lrow-main"><span>Follow My Location</span></div><label class="tg"><input type="checkbox" id="setFollow" ${watchId != null ? 'checked' : ''}><span></span></label></div>
     <p class="set-note">Keep the forecast and map centered on you as you move.</p>
@@ -434,7 +438,10 @@ function openSettings(view = 'main') {
     $$('#setTheme button', b).forEach((x) => x.onclick = () => { state.theme = x.dataset.v; store.set('theme', state.theme); applyTheme(); openSettings(); });
     $('#setFollow', b).onchange = () => toggleFollow();
     $('#setPlan', b).onclick = () => openPricing();
-    $$('#setPreview button', b).forEach((x) => x.onclick = () => { setPlan(x.dataset.v); toast(`Previewing ${TIERS[x.dataset.v].name}`); openSettings(); });
+    const on = (id, fn) => { const el = $(id, b); if (el) el.onclick = fn; };
+    on('#setSignIn', () => openSignIn(() => openSettings()));
+    on('#setSignOut', () => { signOut(); openSettings(); });
+    on('#setManage', manage);
     $('#setPlaces', b).onclick = openPlaces;
     $('#setNotify', b).onchange = async (e) => {
       if (e.target.checked && !gate('noAds', 'Weather alerts')) { e.target.checked = false; return; }
@@ -465,6 +472,7 @@ async function boot() {
   Map.initMap('map', start, effTheme, { onPick: pickPoint, onSavePlace: savePlace, getPlaces: () => state.favs, onCenter });
   applyTheme();
   document.body.dataset.plan = plan();
+  handleReturn();
   if (FREE_WHILE_TESTING) {
     document.body.classList.add('free-testing');
     const chip = document.createElement('button');

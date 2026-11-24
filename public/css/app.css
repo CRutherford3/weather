@@ -710,3 +710,9 @@ body.split #map2 { display: block; }
 .pane2-pick { position: absolute; z-index: 5; top: 10px; left: 50%; transform: translateX(-50%); border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); color: var(--text); font: 600 13px Inter, sans-serif; padding: 6px 12px; border-radius: 999px; cursor: pointer; }
 #toolSplit.on, #toolSplit.on svg { color: #8b5cf6; }
 body.split .crosshair { top: 25%; }
+
+/* Account sign-in */
+.acct p { margin: 0 0 12px; }
+.acct-in { width: 100%; box-sizing: border-box; font-size: 17px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); }
+.acct-in.code { font-size: 26px; letter-spacing: 8px; text-align: center; font-weight: 700; }
+.acct .btn.wide { width: 100%; margin: 12px 0 0; }
